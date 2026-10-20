@@ -68,7 +68,24 @@ async def list_crawler_spiders() -> dict:
         response = await client.get("https://app.zyte.com/api/spiders/list.json",
             params={"project": "882321"}, auth=(key, ""))
     if response.status_code != 200:
-        raise ValueError(f"Scrapy Cloud request failed (HTTP {response.status_code}).")
+        # Return bounded diagnostics without echoing credentials or raw HTML.
+        content_type = response.headers.get("content-type", "").split(";")[0]
+        detail = "No structured error returned."
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                fields = {name: payload[name] for name in ("error", "message", "detail", "status") if isinstance(payload.get(name), (str, int, bool))}
+                import json
+                import re
+                detail = json.dumps(fields)[:1000]
+                for secret_name in ("SCRAPY_CLOUD_API_KEY", "ZYTE_API_KEY", "GITHUB_CLIENT_SECRET", "JWT_SIGNING_KEY"):
+                    secret = os.environ.get(secret_name)
+                    if secret:
+                        detail = detail.replace(secret, "[redacted]")
+                detail = re.sub(r"[A-Za-z0-9_+/=-]{24,}", "[redacted]", detail)
+        except ValueError:
+            detail = "HTML gateway/access-denied response." if "html" in content_type else detail
+        raise ValueError(f"Scrapy Cloud HTTP {response.status_code}; type={content_type}; {detail}")
     data = response.json()
     if data.get("status") != "ok":
         raise ValueError("Scrapy Cloud could not list spiders. Check the project key permissions.")
