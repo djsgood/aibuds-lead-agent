@@ -65,7 +65,7 @@ async def list_crawler_spiders() -> dict:
         raise ValueError("SCRAPY_CLOUD_API_KEY is not configured; this is separate from ZYTE_API_KEY.")
     await budget()
     async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
-        response = await client.get("https://app.scrapinghub.com/api/spiders/list.json",
+        response = await client.get("https://app.zyte.com/api/spiders/list.json",
             params={"project": "882321"}, auth=(key, ""))
     if response.status_code != 200:
         raise ValueError(f"Scrapy Cloud request failed (HTTP {response.status_code}).")
