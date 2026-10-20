@@ -91,5 +91,24 @@ async def list_crawler_spiders() -> dict:
         raise ValueError("Scrapy Cloud could not list spiders. Check the project key permissions.")
     return {"project_id": "882321", "spiders": data.get("spiders", [])}
 
+
+async def diagnose_cloud_auth():
+    """One bounded read-only check; logs booleans/statuses, never key values."""
+    import json
+    raw = os.environ.get("SCRAPY_CLOUD_API_KEY", "")
+    result = {"configured": bool(raw), "surrounding_whitespace": raw != raw.strip(),
+              "wrapped_in_quotes": raw.startswith(('"', "'")) or raw.endswith(('"', "'")),
+              "same_as_zyte_api_key": bool(raw) and raw == os.environ.get("ZYTE_API_KEY")}
+    if raw:
+        try:
+            async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
+                response = await client.get("https://jobq.zyte.com/jobq/882321/count", auth=(raw.strip(), ""))
+            result["independent_jobq_http_status"] = response.status_code
+            result["project_access_confirmed"] = response.status_code == 200
+        except httpx.HTTPError:
+            result["independent_check"] = "network_error"
+    print("CLOUD_AUTH_DIAGNOSTIC " + json.dumps(result), flush=True)
+
 if __name__ == "__main__":
+    asyncio.run(diagnose_cloud_auth())
     mcp.run(transport="http", host="0.0.0.0", port=int(os.environ.get("PORT", "8000")))
