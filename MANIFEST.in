@@ -1,0 +1,2 @@
+include scrapy.cfg scrapinghub.yml requirements-crawler.txt CRAWLER.md
+recursive-include tests *.py

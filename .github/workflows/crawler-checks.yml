@@ -1,0 +1,20 @@
+name: Crawler checks
+on:
+  push:
+    branches: ["feat/zyte-mcp"]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  crawler:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-crawler.txt
+      - run: python -m scrapy list
+      - run: python -m unittest discover -s tests -v
+      - run: python tests/fixture_crawl.py
+      - run: python setup.py sdist
