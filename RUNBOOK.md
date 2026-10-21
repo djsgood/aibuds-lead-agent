@@ -157,7 +157,9 @@ never paste keys into chat or commit them.
 ## Daily discovery worker
 
 Deploy only `aibuds-discovery-worker` using `Dockerfile.worker`, pinned to a reviewed
-commit. Its one-shot command is `python -m lead_agent.daily`; Railway cron is
+commit. Set its Railway config file to `/railway.worker.json`; the root
+`railway.json` belongs to the MCP web service and overrides dashboard build settings.
+Its one-shot command is `python -m lead_agent.daily`; Railway cron is
 `0 13 * * *` (13:00 UTC daily), restart policy NEVER. Do not also run the older
 looping worker on this service. Set ENABLE_SCHEDULE=true only after validation.
 
