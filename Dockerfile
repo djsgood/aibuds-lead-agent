@@ -2,9 +2,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY mcp/requirements.txt .
 COPY requirements-crawler.txt .
-RUN --mount=type=secret,id=proxy_ca \
-    if [ -f /run/secrets/proxy_ca ]; then export PIP_CERT=/run/secrets/proxy_ca; fi; \
-    pip install --no-cache-dir -r requirements.txt -r requirements-crawler.txt
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-crawler.txt
 COPY --chown=10001:10001 mcp/ ./
 COPY --chown=10001:10001 lead_agent/ ./lead_agent/
 COPY --chown=10001:10001 aibuds_crawler/ ./aibuds_crawler/
