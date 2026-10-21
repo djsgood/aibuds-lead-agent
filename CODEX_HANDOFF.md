@@ -100,3 +100,17 @@ gates, incomplete providers/review collectors, snapshot authority, and platform
 limitations are explicitly recorded in the requirement matrix. No paid calls,
 live Sheet writes, deployment or scheduling occurred. Keep campaign and current
 MCP service branches/configuration unchanged.
+
+## Live validation preparation
+
+Run `python -m lead_agent.validation` for the zero-call plan. Actual execution
+requires --execute --allow-provider-charges and securely configured ZYTE_API_KEY.
+This is a six-attempt total, two-industry, one-page smoke with $0.06 estimated
+accounting; actual provider pricing differs. No Hunter/Sheets/model/campaign calls.
+Five tests mock the full six-call path and test blocking before side effects.
+Full suite now has 88 tests + 14 subtests. Earlier b12bde9 GitHub PR workflows
+Crawler checks and MCP checks both succeeded. No live paid call occurred.
+Managed environment has no Zyte key; Railway OAuth app only reveals that the
+separate MCP service has it, not its value. Do not ask for keys in chat. The user
+has a pending question choosing credits-only versus approval for six paid calls.
+Do not treat no reply as approval or bypass the original free-only constraint.

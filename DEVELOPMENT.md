@@ -183,3 +183,20 @@ CI on GitHub, deployment and scheduling are not claimed tested. No paid provider
 call, external sheet write, campaign import/send, or deployed-service change
 was performed. The snapshot adapter does not establish that an arbitrary file
 is authoritative; operational export coverage is a production acceptance gate.
+
+## Bounded acceptance harness
+
+Added lead_agent.validation: a zero-call default plan plus explicitly approved
+six-attempt live smoke against two industries. Fresh isolated local state avoids
+mistaking cached fixtures for live results. No enrichment/model/Sheets/outreach/
+deployment path is used. Five acceptance-harness tests cover dry-run/no DB side
+effects, missing paid approval/credentials, plan protections, and exact six-call
+execution against synthetic HTTP responses. Full suite: 88 tests + 14 subtests.
+GitHub Actions for previous head b12bde9 completed successfully for both Crawler
+checks (run 39525770353) and MCP checks (run 39525770230).
+
+Live execution remains blocked on secure local ZYTE_API_KEY configuration and
+explicit provider-cost authorization. Railway OAuth only exposes variable names;
+the presence of its key does not imply access from this workspace. No paid calls
+or external writes were performed. The $0.06 harness ceiling is estimated
+accounting, not a provider invoice cap; credits-only usage cannot be guaranteed.

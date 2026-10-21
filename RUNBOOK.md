@@ -113,3 +113,43 @@ protect the volume/snapshot, restrict file access, and never commit data/ or key
 All external services are mocked in these tests. Offline success is not live
 provider, account, Windows, Google, deployment or commercial-readiness proof.
 See AUTONOMOUS_AGENT_REQUIREMENTS.md for feature status and remaining gates.
+
+## Bounded live validation
+
+Use the dedicated harness rather than an unrestricted execution while validating
+account access. Planning requires no credentials and performs no API/DB calls:
+
+```powershell
+.\.venv\Scripts\python -m lead_agent.validation
+```
+
+After explicitly approving provider charges and securely configuring ZYTE_API_KEY
+in the environment where the command will run:
+
+```powershell
+.\.venv\Scripts\python -m lead_agent.validation --execute --allow-provider-charges
+```
+
+The harness uses new isolated local state on every execution, two industry targets
+(roofing/plumbing in New Martinsville, WV), one business and one page per target,
+and a maximum SIX total Zyte attempts including retries, search, and robots.
+The accounting ceiling is $0.06 at a $0.01/attempt estimate, NOT an invoice or
+provider-price guarantee. Actual pricing and account-side spending controls remain
+necessary. Credits-only use cannot be guaranteed by this client; verify the account
+balance/billing controls first. It does not use Hunter, Ollama, Google Sheets,
+campaign APIs, scheduling or deployment. It writes private local records and a
+contact-free summary to data/live-validation/<unique-run>/report.json.
+
+Missing charge approval or credentials blocks before DB creation/provider calls.
+The result includes source-backed identity/page/evidence counts, rejection reasons,
+errors, actual attempted-call counters and estimated accounting. No contacts can
+qualify for handoff without independent verification; a passing research smoke
+never means production-ready. An incomplete sample or API/account/schema failure
+returns nonzero, retains evidence and does not silently broaden the budget.
+
+On October 20 the managed execution environment had no provider credentials.
+The connected Railway OAuth app confirmed ZYTE_API_KEY exists on the separate MCP
+service but exposes names only. It cannot transfer that key into this workspace.
+No key was read/exposed and no live paid call was made. Configure the key through
+secure environment settings or run this command locally where it is configured;
+never paste keys into chat or commit them.
