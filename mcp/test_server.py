@@ -27,10 +27,10 @@ class ServerTests(unittest.TestCase):
         self.addCleanup(self.settings.stop)
         self.server=importlib.import_module('server')
 
-    def test_only_contact_extraction_tool_is_exposed(self):
+    def test_retained_and_discovery_tools_are_exposed(self):
         async def check():
             async with Client(self.server.mcp) as client:
-                self.assertEqual({tool.name for tool in await client.list_tools()}, {'collect_business_contacts'})
+                self.assertEqual({tool.name for tool in await client.list_tools()}, {'collect_business_contacts', 'discover_new_leads'})
         self.assertIsNotNone(self.server.auth)
         asyncio.run(check())
 
@@ -45,3 +45,8 @@ class ServerTests(unittest.TestCase):
         with patch.object(httpx.AsyncClient,'request',side_effect=AssertionError('Unexpected startup request')), patch.object(FastMCP,'run') as run:
             runpy.run_path(self.server.__file__,run_name='__main__')
         run.assert_called_once_with(transport='http',host='0.0.0.0',port=8000)
+
+    def test_discovery_rejects_nonowner_before_import_or_network(self):
+        with patch.object(self.server, 'get_access_token', return_value=None):
+            with self.assertRaises(ValueError):
+                asyncio.run(self.server.discover_new_leads(['roofing'], ['WV'], dry_run=False))

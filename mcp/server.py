@@ -56,5 +56,14 @@ async def collect_business_contacts(url: str) -> dict:
             raise ValueError(str(exc)) from None
         raise ValueError("Zyte network request failed; retry later.") from None
 
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "openWorldHint": True})
+async def discover_new_leads(industries: list[str], locations: list[str], max_businesses: int = 1,
+                             max_api_requests: int = 3, dry_run: bool = True) -> dict:
+    """Discover NEW businesses by industry and location without supplying URLs. Search and research using paid Zyte, deduplicate and save to SQLite. Defaults to zero-call preview; dry_run=false incurs charges capped by max_api_requests including retries. No sending, campaign changes, or Sheets writes. Unverified contacts remain ineligible for outreach."""
+    owner_only()
+    from lead_agent.mcp_discovery import discover
+    return await asyncio.to_thread(discover, industries, locations, max_businesses, max_api_requests, dry_run)
+
+
 if __name__ == "__main__":
     mcp.run(transport="http", host="0.0.0.0", port=int(os.environ.get("PORT", "8000")))

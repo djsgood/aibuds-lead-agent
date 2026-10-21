@@ -11,7 +11,11 @@ from lead_agent.research import research, strict_qualification, relevant_role, f
 
 
 def load_config(path):
-    config=json.loads(Path(path).read_text())
+    return validate_config(json.loads(Path(path).read_text()))
+
+
+def validate_config(config):
+    config=dict(config)
     config["industries"]=parse_list(config.get("industries"),"industries")
     config["locations"]=parse_list(config.get("locations"),"locations")
     if len(config["industries"])*len(config["locations"])>6: raise ValueError("Maximum six target combinations per run")
