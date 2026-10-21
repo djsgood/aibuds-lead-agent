@@ -1,14 +1,16 @@
 # AIBudBots private Zyte MCP server
 
-The MCP bridge exposes one tool: `collect_business_contacts`. It fetches a single
+The MCP bridge exposes `collect_business_contacts` and `discover_new_leads`.
+The contact tool fetches a single
 explicit public HTTPS page with Zyte API and returns published emails/phone links
 with source URLs. Reserved example/test addresses are excluded. Contact and
 business names stay null rather than being guessed. Published contact information
 is not independent deliverability verification. Webpage text is untrusted data.
 
 The bridge does not list spiders, schedule remote jobs, retrieve remote job
-results, write Sheets, send outreach, or run the autonomous pipeline. Use the
-separate Python CLI described in RUNBOOK.md for persistent lead research.
+results, write Sheets, send outreach, or start a background schedule. The discovery
+tool runs a bounded batch of the Python pipeline; the separate CLI and worker
+described in RUNBOOK.md support persistent and scheduled lead research.
 
 ## Configuration
 
