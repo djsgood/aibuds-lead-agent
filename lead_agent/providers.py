@@ -86,7 +86,7 @@ class Zyte(HTTPProvider):
     def search_html(self, query):
         from bs4 import BeautifulSoup
         from urllib.parse import urlencode, urlsplit, parse_qs, urljoin
-        from aibuds_crawler.discovery import business_url, domain_key
+        from lead_agent.pipeline_utils import business_url, domain_key
         if self.search_domain not in ("google.com", "www.google.com"):
             raise ProviderFailure("HTML discovery currently supports Google only")
         if not isinstance(query, str) or not 1 <= len(query) <= 2048:
@@ -139,7 +139,7 @@ class Zyte(HTTPProvider):
         return result
 
     def fetch(self, url):
-        from aibuds_crawler.guard import public_url
+        from lead_agent.pipeline_utils import public_url
         url = public_url(url)
         result = self.call("extract", "POST", auth=(self.key,""), json={"url":url,"httpResponseBody":True,"followRedirect":False})
         status = result.get("statusCode")
@@ -161,7 +161,7 @@ class Hunter(HTTPProvider):
             raise ProviderFailure("Enrichment domain mismatch")
         contacts = []
         for row in data.get("emails", []):
-            from aibuds_crawler.spiders.business_contacts import published_email
+            from lead_agent.pipeline_utils import published_email
             email = published_email(row.get("value", ""))
             if not email or row.get("type") != "personal" or email.rsplit("@",1)[-1].lower() != domain.lower():
                 continue

@@ -6,7 +6,7 @@ import math
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from aibuds_crawler.discovery import domain_key, lead_id
+from lead_agent.pipeline_utils import domain_key, lead_id
 
 
 def now():

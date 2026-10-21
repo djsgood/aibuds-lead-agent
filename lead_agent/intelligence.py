@@ -1,7 +1,7 @@
 """Deterministic source-linked operational signals; no invented causes or pain."""
 import re
 from datetime import datetime
-from aibuds_crawler.guard import public_url
+from lead_agent.pipeline_utils import public_url
 
 SIGNALS = {
  'slow_response':r'\b(?:never (?:called|responded)|no (?:call ?back|response)|slow to respond|did not respond)\b',

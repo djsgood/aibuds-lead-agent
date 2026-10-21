@@ -2,14 +2,10 @@
 import json
 import re
 from datetime import datetime, timezone, timedelta
-from urllib.parse import urlsplit, urljoin
+from urllib.parse import urlsplit
 from urllib.robotparser import RobotFileParser
 from bs4 import BeautifulSoup
-import scrapy
-from scrapy.http import HtmlResponse
-from aibuds_crawler.spiders.business_contacts import BusinessContactsSpider
-from aibuds_crawler.discovery import qualify, domain_key
-from aibuds_crawler.guard import public_url
+from lead_agent.pipeline_utils import contact_page_urls, extract_contact_values, public_url, published_email, qualify
 from lead_agent.store import now
 from lead_agent.providers import ProviderFailure
 
@@ -32,8 +28,7 @@ def structured_nodes(soup):
 
 
 def research(candidate, provider, pages_per_site=3, *, checkpoint_store=None, checkpoint_prefix=""):
-    website = candidate["website"]
-    parser = BusinessContactsSpider(urls=website, pages_per_site=pages_per_site)
+    website = public_url(candidate["website"])
     host = urlsplit(website).hostname
     root = "https://"+host
     robots = RobotFileParser()
@@ -47,7 +42,7 @@ def research(candidate, provider, pages_per_site=3, *, checkpoint_store=None, ch
     row = {**candidate,"business_name":None,"business_name_source_url":None,"contact_name":None,
            "emails":[],"phones":[],"source_urls":[],"fit_evidence":[],"_pages":[],"facts":[],
            "hypotheses":[],"research_documents":[],"unknowns":[],"people":[],"collection_errors":[],"country":None,"employee_count":None,"collected_at":now()}
-    queue, visited = [website], set()
+    queue, visited, scheduled = [website], set(), {website}
     while queue and len(visited) < pages_per_site:
         url = queue.pop(0)
         if url in visited: continue
@@ -69,7 +64,6 @@ def research(candidate, provider, pages_per_site=3, *, checkpoint_store=None, ch
             types = node.get("@type",[]); types = [types] if isinstance(types,str) else types
             if not isinstance(types,list): continue
             if "Person" in types:
-                from aibuds_crawler.spiders.business_contacts import published_email
                 email = published_email(str(node.get("email","")).removeprefix("mailto:"))
                 if isinstance(node.get("name"),str) and relevant_role(node.get("jobTitle", "")):
                     person = {"name":node["name"],"role":node["jobTitle"],"email":email,"source_url":url,"source_urls":[url],"retrieved_at":now()}
@@ -84,14 +78,23 @@ def research(candidate, provider, pages_per_site=3, *, checkpoint_store=None, ch
                 number = node.get("numberOfEmployees")
                 if isinstance(number,dict): number = number.get("value")
                 if isinstance(number,int) and not isinstance(number,bool): row["employee_count"] = number
-        response = HtmlResponse(url, request=scrapy.Request(url,meta={"business_host":host}),body=html.encode(),encoding="utf-8")
-        for extracted in parser.parse(response):
-            if isinstance(extracted,scrapy.Request):
-                if extracted.url not in queue: queue.append(extracted.url)
-            else:
-                for field,key in (("emails","email"),("phones","phone")):
-                    existing = {v[key] for v in row[field]}
-                    row[field].extend(v for v in extracted[field] if v[key] not in existing)
+        visible_soup = BeautifulSoup(html,"html.parser")
+        for tag in visible_soup(["script","style","noscript"]): tag.decompose()
+        visible = visible_soup.body.get_text(" ",strip=True) if visible_soup.body else ""
+        emails, phones = extract_contact_values(
+            visible,
+            [a.get("href","") for a in soup.select('a[href^="mailto:"]')],
+            [a.get("href","") for a in soup.select('a[href^="tel:"]')],
+        )
+        for field, values, key in (("emails",emails,"email"),("phones",phones,"phone")):
+            existing = {v[key] for v in row[field]}
+            row[field].extend({key:value,"source_url":url} for value in values if value not in existing)
+        for link in contact_page_urls((a.get("href","") for a in soup.select("a[href]")),url,host):
+            if len(scheduled) >= pages_per_site:
+                break
+            if link not in scheduled:
+                scheduled.add(link)
+                queue.append(link)
         for tag in soup(["script","style","noscript"]): tag.decompose()
         text = soup.get_text(" ",strip=True)[:100000]
         row["_pages"].append({"url":url,"text":text})

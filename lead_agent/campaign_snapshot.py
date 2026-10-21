@@ -2,8 +2,7 @@
 import json
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from aibuds_crawler.discovery import domain_key, business_url
-from aibuds_crawler.spiders.business_contacts import published_email
+from lead_agent.pipeline_utils import domain_key, business_url, published_email
 from lead_agent.store import now
 
 

@@ -4,7 +4,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from aibuds_crawler.discovery import parse_list, business_url, domain_key, lead_id
+from lead_agent.pipeline_utils import parse_list, business_url, domain_key, lead_id
 from lead_agent.store import Store, BudgetExceeded, now
 from lead_agent.providers import Zyte, Hunter, ProviderFailure
 from lead_agent.research import research, strict_qualification, relevant_role, fresh_verification
