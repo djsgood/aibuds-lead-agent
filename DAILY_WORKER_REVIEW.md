@@ -34,3 +34,9 @@ Source review covered the runner, providers, research/qualification, SQLite jobs
 leases and budgets, daily exports, worker image, deployment configuration and
 existing outreach handoff boundaries. Automated tests supplement this review;
 GitHub checks are test workflows, not a Copilot review.
+
+Live follow-up: the current key successfully extracted aibudbots.ai and a public
+Google results page containing relevant Wheeling businesses. Implemented an HTML
+discovery mode using /v1/extract plus deterministic URL parsing and atomic daily
+pagination. The dedicated /v1/search service error does not require rotating a
+working key. Complete worker-batch validation remains the scheduling gate.
