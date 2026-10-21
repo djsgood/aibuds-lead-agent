@@ -99,3 +99,18 @@ per-run paid-attempt caps, daily budgets, domain deduplication, and sourced rese
 It never calls Hunter, writes Sheets, sends outreach, or enables scheduling.
 Default container SQLite is ephemeral: durable storage and a separately validated
 worker deployment remain requirements for continuous unattended operation.
+
+## Daily worker rollout
+
+User authorized deployment and daily research of 20–25 new prospects, with a $3/day
+Zyte budget and separate Railway persistent storage. Prepared lead_agent.daily
+(one-shot, UTC day checkpoint, bounded runner, private atomic CSV/JSON reports),
+config/targets.daily.json (25 businesses, existing three industries and WV target),
+and Dockerfile.worker. No verifier, Sheets/campaign writes or sending are enabled.
+Worker service bf41eff9-59ce-48d7-aa87-9692daf0cd73 owns discovery-data at /data;
+outreach service f60fea6e-2232-48b3-9102-617f82ce4f72 and its volume are protected.
+The worker key is a Railway service reference, never a copied secret value.
+Schedule plan: 0 13 * * * UTC, restart NEVER, explicit enable flag, pinned commit.
+Daily limits are estimated ($0.03/attempt, 100 attempts, $3); actual provider prices
+and weighted search billing require account-side controls for a hard invoice cap.
+A shortfall is reported rather than filled with invented/unverified contacts.

@@ -47,6 +47,7 @@ def candidates(config, zyte, store):
                 result=zyte.search(query)
                 store.checkpoint(key,result)
             for match in result["results"]:
+                if not isinstance(match, dict): continue
                 try: website=business_url(match.get("url",""))
                 except (ValueError,TypeError): continue
                 if not website: continue
@@ -67,6 +68,7 @@ def run(config, store, zyte, hunter=None, interpreter=None):
     counts={"researched":0,"qualified":0,"rejected":0,"suppressed":0,"errors":0,"refreshed":0,"duplicates":0}
     started=time.monotonic()
     status="completed"
+    failure_reason=None
     try:
         for candidate in candidates(config,zyte,store):
             if counts["researched"] >= config.get("max_businesses",10): break
@@ -143,8 +145,9 @@ def run(config, store, zyte, hunter=None, interpreter=None):
             if counts["researched"] >= config.get("max_businesses",10): break
     except BudgetExceeded:
         status="provider_budget_reached"
-    except ProviderFailure:
+    except ProviderFailure as exc:
         counts["errors"]+=1; status="discovery_failed"
+        failure_reason=str(exc)
     except BaseException:
         status="failed"
         raise
@@ -153,7 +156,7 @@ def run(config, store, zyte, hunter=None, interpreter=None):
         elif status=="completed" and counts["researched"]==0: status="no_new_prospects"
         store.end_run(run_id,status)
         store.release("worker",run_id)
-    return {"run_id":run_id,"status":status,**counts,"outreach_enabled":False}
+    return {"run_id":run_id,"status":status,**counts,"outreach_enabled":False, "failure_reason":failure_reason}
 
 
 def main(argv=None):
