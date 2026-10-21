@@ -186,3 +186,11 @@ storage are separate. Keep the daily worker's key as a Railway variable referenc
 Rollback: disable this worker's cron and set ENABLE_SCHEDULE=false, preserving its
 volume. Re-pin its previous reviewed commit if needed. Never change the outreach
 service or its volume. Do not delete the SQLite database to retry a job.
+
+The daily worker defaults to `LEAD_AGENT_DISCOVERY_SOURCE=bing_rss`: free public
+Bing RSS discovery, followed by budgeted Zyte website research. A live endpoint
+check returned valid RSS; the initial paid Zyte search returned HTTP 520. RSS
+requests have a separate 36-attempt/day counter, two attempts per query maximum,
+a 1 MB response cap, safe XML parsing and no redirect/challenge bypass. This
+public feed has no service guarantee. Set discovery source to `zyte` only when
+that account's search access is validated; extraction works independently.
