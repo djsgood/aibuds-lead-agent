@@ -165,7 +165,8 @@ Its one-shot command is `python -m lead_agent.daily`; Railway cron is
 `0 13 * * *` (13:00 UTC daily), restart policy NEVER. Do not also run the older
 looping worker on this service. Set ENABLE_SCHEDULE=true only after validation.
 
-Use config/targets.daily.json: up to 25 new researched businesses, one website page
+Use config/targets.daily.json: research up to 50 candidates to produce at most 25
+industry- and location-supported prospects, one website page
 plus robots per business, roofing/plumbing/HVAC in New Martinsville, Wheeling and Parkersburg WV; Marietta and Steubenville OH;
 and Washington PA, as approved by the owner. The target
 is not a guaranteed count of verified contacts. Unknown identities stay blank;
@@ -186,3 +187,8 @@ storage are separate. Keep the daily worker's key as a Railway variable referenc
 Rollback: disable this worker's cron and set ENABLE_SCHEDULE=false, preserving its
 volume. Re-pin its previous reviewed commit if needed. Never change the outreach
 service or its volume. Do not delete the SQLite database to retry a job.
+
+Daily list location evidence is a sourced website mention of the target city and
+state, not independent headquarters verification. The CSV includes its quote and
+source URL. Records without this evidence are excluded, even if search returned
+them. Reports include UTC-day API attempt and estimated-cost totals.
