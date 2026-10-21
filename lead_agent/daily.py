@@ -96,12 +96,6 @@ def main():
             'max_cost': float(os.environ.get('LEAD_AGENT_MAX_DAILY_COST_USD', '3')),
             'estimated_cost': float(os.environ.get('LEAD_AGENT_ESTIMATED_CALL_COST_USD', '0.03')),
         }, search_domain=os.environ.get('ZYTE_SEARCH_DOMAIN', 'google.com'))
-        discovery_source = os.environ.get('LEAD_AGENT_DISCOVERY_SOURCE', 'bing_rss')
-        if discovery_source == 'bing_rss':
-            from lead_agent.rss_discovery import BingRSSWithZyte
-            provider = BingRSSWithZyte(provider, store)
-        elif discovery_source != 'zyte':
-            raise ValueError('Unsupported discovery source')
         result = execute(config, store, provider, path.parent / 'reports')
         print(json.dumps(result), flush=True)
         return 1 if result['status'] in ('failed', 'discovery_failed', 'completed_with_errors') else 0
