@@ -59,3 +59,14 @@ def test_disabled_or_nonpersistent_worker_makes_no_calls(settings):
     with patch.dict('os.environ', settings, clear=True), patch('lead_agent.daily.Store') as store:
         with pytest.raises(SystemExit): main()
         store.assert_not_called()
+
+
+def test_provider_failure_can_resume_after_configuration_repair(tmp_path):
+    store = Store(':memory:')
+    with patch('lead_agent.daily.run', return_value={'status':'discovery_failed'}):
+        execute({'max_businesses':25}, store, Mock(), tmp_path, day='2026-10-21')
+    assert store.get_checkpoint('daily:2026-10-21') is None
+    with patch('lead_agent.daily.run', return_value={'status':'completed'}) as run:
+        execute({'max_businesses':25}, store, Mock(), tmp_path, day='2026-10-21')
+        run.assert_called_once()
+    store.close()

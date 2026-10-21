@@ -69,7 +69,7 @@ def execute(config, store, provider, reports, day=None):
     try:
         result = run(config, store, provider)  # No Hunter/model/Sheets/campaign integration.
         summary = export_daily(store, reports, day, config['max_businesses'], result)
-        if result.get('status') != 'another_run_active':
+        if result.get('status') not in ('another_run_active', 'discovery_failed', 'failed'):
             store.checkpoint(checkpoint, summary)
         return summary
     finally:
