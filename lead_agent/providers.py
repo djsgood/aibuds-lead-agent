@@ -1,7 +1,10 @@
 """Small provider adapters. No guessed contact facts or unbudgeted retries."""
 import base64
+import re
 import time
 import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urlsplit, parse_qs, unquote
 from typing import Protocol
 from lead_agent.store import now
 
@@ -55,6 +58,84 @@ class HTTPProvider:
             except ValueError:
                 raise ProviderFailure(self.name + " invalid JSON") from None
         raise ProviderFailure(self.name + " retry limit")
+
+
+class OpenWeb:
+    """Non-Zyte web discovery and fetch using public-search HTML parsing."""
+    RESULT_PATTERN = re.compile(r"^/l/\?kh=-1&uddg=", re.I)
+
+    def __init__(self, store, budget, session=None, search_url="https://duckduckgo.com/html/"):
+        self.name = "open_web"
+        self.search_url = search_url
+        self.store, self.budget = store, budget
+        self.session = session or requests.Session()
+
+    @staticmethod
+    def _normalize_result(href):
+        if not href:
+            return None
+        if href.startswith("http://"):
+            href = "https://" + href[len("http://"):]
+        if href.startswith("https://"):
+            return href
+        parsed = urlsplit(href)
+        if parsed.path == "/l/" and parsed.query:
+            target = parse_qs(parsed.query).get("uddg", [""])[0]
+            if target.startswith("http://"):
+                target = "https://" + target[len("http://"):]
+            return unquote(target) if target.startswith("https://") else None
+        if OpenWeb.RESULT_PATTERN.match(href):
+            target = parse_qs(urlsplit(href).query).get("uddg", [""])[0]
+            target = unquote(target)
+            if target.startswith("http://"):
+                target = "https://" + target[len("http://"):]
+            return target if target.startswith("https://") else None
+        return None
+
+    def search(self, query):
+        self.store.reserve_call(self.name, **self.budget)
+        try:
+            response = self.session.request("GET", self.search_url, params={"q": query}, timeout=35, allow_redirects=False)
+        except requests.RequestException:
+            raise ProviderFailure("open_web network failure") from None
+        if response.status_code != 200:
+            raise ProviderFailure(f"open_web HTTP {response.status_code}")
+        if len(response.content) > 4_000_000:
+            raise ProviderFailure("open_web response exceeds limit")
+        soup = BeautifulSoup(response.text, "html.parser")
+        results = []
+        for anchor in soup.select("a.result__a, h2 a"):
+            target = self._normalize_result(anchor.get("href", ""))
+            if target:
+                results.append({"url": target, "title": (anchor.get_text(" ", strip=True) or "")[:300]})
+            if len(results) >= 20:
+                break
+        if not results:
+            # Fallback: any absolute links that are not search-engine internals.
+            for anchor in soup.select("a[href]"):
+                target = self._normalize_result(anchor.get("href", ""))
+                if target:
+                    results.append({"url": target, "title": (anchor.get_text(" ", strip=True) or "")[:300]})
+                if len(results) >= 20:
+                    break
+        return {"source_url": response.url, "results": results, "retrieved_at": now()}
+
+    def fetch(self, url):
+        from aibuds_crawler.guard import public_url
+        target = public_url(url)
+        self.store.reserve_call(self.name, **self.budget)
+        try:
+            response = self.session.request("GET", target, timeout=35, allow_redirects=False, headers={"User-Agent": "AIBudBotsContactCrawler/1.0"})
+        except requests.RequestException:
+            raise ProviderFailure("open_web fetch network failure") from None
+        if response.status_code != 200:
+            raise ProviderFailure(f"Website HTTP {response.status_code}; supply/crawl its final HTTPS URL")
+        if len(response.content) > 4_000_000:
+            raise ProviderFailure("Website response exceeds limit")
+        ctype = (response.headers.get("Content-Type", "") or "").lower()
+        if ctype and "text" not in ctype and "json" not in ctype and "xml" not in ctype:
+            raise ProviderFailure("Website content type unsupported")
+        return response.text
 
 
 class Zyte(HTTPProvider):
@@ -124,3 +205,32 @@ class Hunter(HTTPProvider):
                 "verification_method":"hunter_email_verifier","checked_at":now(),
                 "provider_verified_at":(row.get("verification") or {}).get("date"),
                 "verification_source_url":"https://hunter.io/api-documentation/v2#email-verifier"}
+
+
+class VibeProspecting(HTTPProvider):
+    """Optional adapter for external prospecting APIs that return business websites."""
+    def __init__(self, key, store, budget, session=None, base="https://api.vibe-prospecting.ai/v1/"):
+        super().__init__("vibe_prospecting", base, key, store, budget, session)
+
+    def search(self, query):
+        payload = self.call("search", "POST", headers={"Authorization": "Bearer " + self.key}, json={"query": query, "limit": 20})
+        rows = payload.get("results", [])
+        if not isinstance(rows, list):
+            raise ProviderFailure("vibe_prospecting search schema mismatch")
+        results = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            website = row.get("website") or row.get("url")
+            if isinstance(website, str):
+                if website.startswith("http://"):
+                    website = "https://" + website[len("http://"):]
+                if website.startswith("https://"):
+                    results.append({"url": website, "title": str(row.get("company_name") or row.get("title") or "")[:300]})
+            if len(results) >= 20:
+                break
+        return {"source_url": payload.get("source_url") or "", "results": results, "retrieved_at": now()}
+
+    def fetch(self, url):
+        # Website crawl remains direct and evidence-based, not provider-inferred.
+        return OpenWeb(self.store, self.budget, self.session).fetch(url)

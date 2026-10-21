@@ -10,6 +10,7 @@
   "max_businesses": 10,
   "pages_per_site": 3,
   "max_contacts_per_business": 2,
+  "min_verified_prospects_daily": 20,
   "employee_min": 5,
   "employee_max": 50,
   "max_runtime_seconds": 600,
