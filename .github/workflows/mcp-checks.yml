@@ -1,7 +1,7 @@
 name: MCP checks
 on:
   push:
-    branches: ["feat/zyte-mcp"]
+    branches: ["feat/zyte-mcp", "dev/autonomous-lead-pipeline"]
   pull_request:
 permissions:
   contents: read
@@ -23,4 +23,5 @@ jobs:
           JWT_SIGNING_KEY: test-signing-key-for-ci-only-do-not-use-in-production
         run: |
           cd mcp
-          python -c "import asyncio; from fastmcp import Client; from server import mcp; exec('async def check():\n async with Client(mcp) as c:\n  tools = await c.list_tools()\n  assert {t.name for t in tools} == {\"collect_business_contacts\", \"list_crawler_spiders\"}'); asyncio.run(check())"
+          python -c "import asyncio; from fastmcp import Client; from server import mcp; exec('async def check():\n async with Client(mcp) as c:\n  tools = await c.list_tools()\n  assert {t.name for t in tools} == {\"collect_business_contacts\", \"list_crawler_spiders\", \"start_lead_generation\", \"get_lead_generation_results\"}'); asyncio.run(check())"
+

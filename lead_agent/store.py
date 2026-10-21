@@ -1,0 +1,139 @@
+import json
+import sqlite3
+import time
+import uuid
+import math
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from aibuds_crawler.discovery import domain_key, lead_id
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def email_key(value):
+    return str(value or "").strip().lower()
+
+
+class BudgetExceeded(RuntimeError): pass
+
+
+class Store:
+    def __init__(self, path):
+        path = str(path)
+        if path != ":memory:":
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+        self.db = sqlite3.connect(path, timeout=15, isolation_level=None)
+        self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.execute("PRAGMA foreign_keys=ON")
+        self.db.executescript('''
+        CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, started_at TEXT NOT NULL, ended_at TEXT, status TEXT NOT NULL, config TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS companies(id TEXT PRIMARY KEY, domain TEXT UNIQUE NOT NULL, payload TEXT NOT NULL, stage TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS contacts(email TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), payload TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS evidence(id INTEGER PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), source_url TEXT NOT NULL, quote TEXT NOT NULL, kind TEXT NOT NULL, retrieved_at TEXT NOT NULL, UNIQUE(company_id,source_url,quote,kind));
+        CREATE TABLE IF NOT EXISTS suppressions(kind TEXT NOT NULL, value TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(kind,value));
+        CREATE TABLE IF NOT EXISTS budgets(day TEXT NOT NULL, provider TEXT NOT NULL, calls INTEGER NOT NULL, estimated_cost REAL NOT NULL, PRIMARY KEY(day,provider));
+        CREATE TABLE IF NOT EXISTS checkpoints(source_key TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS outbox(company_id TEXT PRIMARY KEY REFERENCES companies(id), status TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS leases(name TEXT PRIMARY KEY, owner TEXT NOT NULL, expires REAL NOT NULL);
+        ''')
+
+    @contextmanager
+    def transaction(self):
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+            self.db.execute("COMMIT")
+        except BaseException:
+            self.db.execute("ROLLBACK")
+            raise
+
+    def start_run(self, config):
+        id_ = uuid.uuid4().hex
+        self.db.execute("INSERT INTO runs VALUES (?,?,NULL,?,?)", (id_, now(), "running", json.dumps(config)))
+        return id_
+
+    def end_run(self, id_, status):
+        self.db.execute("UPDATE runs SET ended_at=?, status=? WHERE id=?", (now(), status, id_))
+
+    def claim(self, name, owner, seconds=900):
+        with self.transaction():
+            row = self.db.execute("SELECT * FROM leases WHERE name=?", (name,)).fetchone()
+            if row and row["expires"] > time.time() and row["owner"] != owner:
+                return False
+            self.db.execute("INSERT OR REPLACE INTO leases VALUES (?,?,?)", (name, owner, time.time()+seconds))
+            return True
+
+    def release(self, name, owner):
+        self.db.execute("DELETE FROM leases WHERE name=? AND owner=?", (name, owner))
+
+    def reserve_call(self, provider, max_calls, max_cost, estimated_cost, day=None):
+        if not all(math.isfinite(v) for v in (max_calls,max_cost,estimated_cost)) or estimated_cost < 0 or max_calls < 1 or max_cost < 0:
+            raise ValueError("Invalid budget")
+        day = day or datetime.now(timezone.utc).date().isoformat()
+        with self.transaction():
+            row = self.db.execute("SELECT calls,estimated_cost FROM budgets WHERE day=? AND provider=?", (day, provider)).fetchone()
+            calls, cost = (row["calls"], row["estimated_cost"]) if row else (0, 0)
+            if calls + 1 > max_calls or cost + estimated_cost > max_cost + 1e-9:
+                raise BudgetExceeded("Daily provider budget exhausted")
+            self.db.execute("INSERT OR REPLACE INTO budgets VALUES (?,?,?,?)", (day, provider, calls+1, cost+estimated_cost))
+
+    def suppress(self, kind, value, reason):
+        if kind not in ("email", "domain"):
+            raise ValueError("Suppression kind must be email or domain")
+        value = email_key(value) if kind == "email" else domain_key("https://" + value.removeprefix("https://").split("/")[0])
+        if not value:
+            raise ValueError("Empty suppression")
+        self.db.execute("INSERT OR IGNORE INTO suppressions VALUES (?,?,?,?)", (kind,value,reason,now()))
+
+    def blocked(self, website, emails=()):
+        domain = domain_key(website)
+        if self.db.execute("SELECT 1 FROM suppressions WHERE kind='domain' AND value=?", (domain,)).fetchone():
+            return True
+        return any(self.db.execute("SELECT 1 FROM suppressions WHERE kind='email' AND value=?", (email_key(e),)).fetchone() for e in emails)
+
+    def known(self, website, emails=()):
+        if self.db.execute("SELECT 1 FROM companies WHERE domain=?", (domain_key(website),)).fetchone():
+            return True
+        return any(self.db.execute("SELECT 1 FROM contacts WHERE email=?", (email_key(e),)).fetchone() for e in emails)
+
+    def save_company(self, record, stage="researched"):
+        id_, domain = lead_id(record["website"]), domain_key(record["website"])
+        emails = [e["email"] for e in record.get("emails", [])]
+        if self.blocked(record["website"], emails):
+            return "suppressed"
+        with self.transaction():
+            if any(self.db.execute("SELECT 1 FROM contacts WHERE email=?", (email_key(e),)).fetchone() for e in emails):
+                return "duplicate"
+            prior = self.db.execute("SELECT stage FROM companies WHERE id=?", (id_,)).fetchone()
+            if prior:
+                return "duplicate"
+            self.db.execute("INSERT INTO companies VALUES (?,?,?,?,?)", (id_,domain,json.dumps(record),stage,now()))
+            for contact in record.get("emails", []):
+                # A duplicate contact never gets reassigned to another company silently.
+                self.db.execute("INSERT OR IGNORE INTO contacts VALUES (?,?,?,?)", (email_key(contact["email"]),id_,json.dumps(contact),now()))
+            for ev in record.get("fit_evidence", []):
+                self.db.execute("INSERT OR IGNORE INTO evidence(company_id,source_url,quote,kind,retrieved_at) VALUES (?,?,?,?,?)", (id_,ev["source_url"],ev.get("quote", ""),ev.get("kind", "observed_fact"),now()))
+            if stage == "qualified":
+                self.db.execute("INSERT OR IGNORE INTO outbox VALUES (?,?,?)", (id_,"pending_review",now()))
+        return "saved"
+
+    def checkpoint(self, key, payload):
+        self.db.execute("INSERT OR REPLACE INTO checkpoints VALUES (?,?,?)", (key,json.dumps(payload),now()))
+
+    def get_checkpoint(self, key):
+        row = self.db.execute("SELECT payload FROM checkpoints WHERE source_key=?", (key,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def metrics(self):
+        return {"companies": self.db.execute("SELECT count(*) FROM companies").fetchone()[0],
+                "contacts": self.db.execute("SELECT count(*) FROM contacts").fetchone()[0],
+                "suppressions": self.db.execute("SELECT count(*) FROM suppressions").fetchone()[0],
+                "stages": dict(self.db.execute("SELECT stage,count(*) FROM companies GROUP BY stage")),
+                "budgets": [dict(r) for r in self.db.execute("SELECT * FROM budgets ORDER BY day DESC LIMIT 20")],
+                "outbox": dict(self.db.execute("SELECT status,count(*) FROM outbox GROUP BY status"))}
+
+    def close(self): self.db.close()

@@ -89,7 +89,7 @@ class BusinessContactsSpider(scrapy.Spider):
                     continue
                 kinds = node.get("@type", [])
                 kinds = [kinds] if isinstance(kinds, str) else kinds
-                if isinstance(kinds, list) and any(k in ("Organization", "LocalBusiness", "Corporation") for k in kinds) and isinstance(node.get("name"), str):
+                if isinstance(kinds, list) and any(k in ("Organization", "LocalBusiness", "Corporation", "RoofingContractor", "Plumber", "Electrician", "HVACBusiness", "GeneralContractor", "HomeAndConstructionBusiness") for k in kinds) and isinstance(node.get("name"), str):
                     business_name = node["name"].strip()[:250] or None
                     break
             if business_name:
@@ -108,7 +108,7 @@ class BusinessContactsSpider(scrapy.Spider):
                 url = public_url(response.urljoin(href))
             except ValueError:
                 continue
-            if urlsplit(url).hostname != host or url in self.scheduled[host]:
+            if urlsplit(url).hostname != urlsplit(response.url).hostname or url in self.scheduled[host]:
                 continue
             path = urlsplit(url).path.lower()
             if not any(word in path for word in ("contact", "about", "team")):
