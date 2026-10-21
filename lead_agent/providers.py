@@ -2,7 +2,18 @@
 import base64
 import time
 import requests
+from typing import Protocol
 from lead_agent.store import now
+
+
+class DiscoveryResearchProvider(Protocol):
+    def search(self, query: str) -> dict: ...
+    def fetch(self, url: str) -> str: ...
+
+
+class ContactVerifier(Protocol):
+    def contacts(self, domain: str) -> list[dict]: ...
+    def verify(self, email: str) -> dict: ...
 
 
 class ProviderFailure(RuntimeError): pass
@@ -38,7 +49,9 @@ class HTTPProvider:
             if len(response.content) > 4_000_000:
                 raise ProviderFailure(self.name + " response exceeds limit")
             try:
-                return response.json()
+                payload=response.json()
+                if not isinstance(payload,dict): raise ProviderFailure(self.name+" invalid response object")
+                return payload
             except ValueError:
                 raise ProviderFailure(self.name + " invalid JSON") from None
         raise ProviderFailure(self.name + " retry limit")
@@ -82,7 +95,7 @@ class Hunter(HTTPProvider):
         for row in data.get("emails", []):
             from aibuds_crawler.spiders.business_contacts import published_email
             email = published_email(row.get("value", ""))
-            if not email or row.get("type") != "personal":
+            if not email or row.get("type") != "personal" or email.rsplit("@",1)[-1].lower() != domain.lower():
                 continue
             name = " ".join(v for v in [row.get("first_name"),row.get("last_name")] if isinstance(v,str)).strip()
             sources = [s["uri"] for s in row.get("sources", []) if isinstance(s.get("uri"),str) and s["uri"].startswith(("http://","https://"))]
@@ -105,7 +118,9 @@ class Hunter(HTTPProvider):
             fresh=0 <= (datetime.now(timezone.utc)-verified_date).days <= 30
         except (ValueError,TypeError): fresh=False
         valid = fresh and row.get("status") == "valid" and row.get("smtp_check") is True and row.get("accept_all") is False and not row.get("disposable") and not row.get("webmail") and not row.get("block")
-        return {"verification_status":"independently_verified" if valid else row.get("status", "unknown"),
+        return {"verification_status":"independently_verified" if valid else ("invalid" if row.get("status")=="invalid" or row.get("disposable") else "risky" if row.get("accept_all") or row.get("webmail") else "unknown"),
+                "dns_mx_check":row.get("mx_records"),"smtp_check":row.get("smtp_check"),
+                "disposable":row.get("disposable"),"accept_all":row.get("accept_all"),
                 "verification_method":"hunter_email_verifier","checked_at":now(),
                 "provider_verified_at":(row.get("verification") or {}).get("date"),
                 "verification_source_url":"https://hunter.io/api-documentation/v2#email-verifier"}

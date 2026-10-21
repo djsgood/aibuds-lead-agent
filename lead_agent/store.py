@@ -38,6 +38,7 @@ class Store:
         CREATE TABLE IF NOT EXISTS budgets(day TEXT NOT NULL, provider TEXT NOT NULL, calls INTEGER NOT NULL, estimated_cost REAL NOT NULL, PRIMARY KEY(day,provider));
         CREATE TABLE IF NOT EXISTS checkpoints(source_key TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS outbox(company_id TEXT PRIMARY KEY REFERENCES companies(id), status TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS jobs(job_key TEXT PRIMARY KEY, stage TEXT NOT NULL, failures INTEGER NOT NULL DEFAULT 0, retry_at REAL NOT NULL DEFAULT 0, error_type TEXT, updated_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS company_versions(company_id TEXT NOT NULL REFERENCES companies(id), version INTEGER NOT NULL, payload TEXT NOT NULL, stage TEXT NOT NULL, saved_at TEXT NOT NULL, PRIMARY KEY(company_id,version));
         CREATE TABLE IF NOT EXISTS leases(name TEXT PRIMARY KEY, owner TEXT NOT NULL, expires REAL NOT NULL);
         ''')
@@ -162,8 +163,24 @@ class Store:
         row = self.db.execute("SELECT payload FROM checkpoints WHERE source_key=?", (key,)).fetchone()
         return json.loads(row[0]) if row else None
 
+    def job_due(self, key):
+        row=self.db.execute("SELECT * FROM jobs WHERE job_key=?",(key,)).fetchone()
+        return not row or (row["stage"] != "failed_enrichment" and row["retry_at"] <= time.time())
+
+    def job_stage(self, key, stage):
+        self.db.execute("INSERT INTO jobs(job_key,stage,updated_at) VALUES (?,?,?) ON CONFLICT(job_key) DO UPDATE SET stage=excluded.stage,retry_at=0,updated_at=excluded.updated_at",(key,stage,now()))
+
+    def job_failed(self, key, error_type):
+        with self.transaction():
+            row=self.db.execute("SELECT failures FROM jobs WHERE job_key=?",(key,)).fetchone()
+            failures=(row[0] if row else 0)+1
+            stage="failed_enrichment" if failures >= 3 else "retry_pending"
+            self.db.execute("INSERT OR REPLACE INTO jobs VALUES (?,?,?,?,?,?)",(key,stage,failures,time.time()+min(3600,60*2**(failures-1)),error_type,now()))
+
     def metrics(self):
-        return {"companies": self.db.execute("SELECT count(*) FROM companies").fetchone()[0],
+        return {"job_stages":dict(self.db.execute("SELECT stage,count(*) FROM jobs GROUP BY stage")),
+                "job_failures":dict(self.db.execute("SELECT error_type,count(*) FROM jobs WHERE error_type IS NOT NULL GROUP BY error_type")),
+                "companies": self.db.execute("SELECT count(*) FROM companies").fetchone()[0],
                 "research_versions": self.db.execute("SELECT count(*) FROM company_versions").fetchone()[0],
                 "contacts": self.db.execute("SELECT count(*) FROM contacts").fetchone()[0],
                 "suppressions": self.db.execute("SELECT count(*) FROM suppressions").fetchone()[0],

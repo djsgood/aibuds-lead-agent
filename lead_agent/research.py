@@ -31,7 +31,7 @@ def structured_nodes(soup):
         yield from (node for node in pending if isinstance(node,dict))
 
 
-def research(candidate, provider, pages_per_site=3):
+def research(candidate, provider, pages_per_site=3, *, checkpoint_store=None, checkpoint_prefix=""):
     website = candidate["website"]
     parser = BusinessContactsSpider(urls=website, pages_per_site=pages_per_site)
     host = urlsplit(website).hostname
@@ -46,7 +46,7 @@ def research(candidate, provider, pages_per_site=3):
         robots.parse([])
     row = {**candidate,"business_name":None,"business_name_source_url":None,"contact_name":None,
            "emails":[],"phones":[],"source_urls":[],"fit_evidence":[],"_pages":[],"facts":[],
-           "hypotheses":[],"unknowns":[],"people":[],"collection_errors":[],"country":None,"employee_count":None,"collected_at":now()}
+           "hypotheses":[],"research_documents":[],"unknowns":[],"people":[],"collection_errors":[],"country":None,"employee_count":None,"collected_at":now()}
     queue, visited = [website], set()
     while queue and len(visited) < pages_per_site:
         url = queue.pop(0)
@@ -55,7 +55,12 @@ def research(candidate, provider, pages_per_site=3):
         if not robots.can_fetch("AIBudBotsContactCrawler",url):
             row["collection_errors"].append({"url":url,"error":"robots_denied"})
             continue
-        try: html = provider.fetch(url)
+        try:
+            cache_key=checkpoint_prefix+":page:"+url
+            html=checkpoint_store.get_checkpoint(cache_key) if checkpoint_store else None
+            if html is None:
+                html=provider.fetch(url)
+                if checkpoint_store: checkpoint_store.checkpoint(cache_key,html)
         except ProviderFailure as exc:
             row["collection_errors"].append({"url":url,"error":str(exc)})
             continue
@@ -90,7 +95,10 @@ def research(candidate, provider, pages_per_site=3):
         for tag in soup(["script","style","noscript"]): tag.decompose()
         text = soup.get_text(" ",strip=True)[:100000]
         row["_pages"].append({"url":url,"text":text})
+        row["research_documents"].append({"source_url":url,"text":text,"kind":"business_website","retrieved_at":now()})
         row["source_urls"].append(url)
+    from lead_agent.intelligence import analyze_documents
+    row["operational_findings"]=analyze_documents(row["research_documents"])
     row = qualify(row)
     for ev in row["fit_evidence"]:
         row["facts"].append({**ev,"kind":"observed_fact","retrieved_at":now()})
@@ -138,6 +146,8 @@ def strict_qualification(record, employee_min=5, employee_max=50):
     if not record.get("hypotheses"): reasons.append("no_evidenced_automation_workflow")
     contacts=[e for e in record.get("emails",[]) if e.get("name") and relevant_role(e.get("role"))
               and (e.get("source_urls") or [e.get("source_url")])[0]
+              and e.get("email", "").lower() not in record.get("excluded_emails", [])
+              and (not record.get("decision_maker_roles") or any(role.lower() in str(e.get("role", "")).lower() for role in record["decision_maker_roles"]))
               and fresh_verification(e)
               and e["email"].split("@")[0].lower() not in GENERIC]
     if not contacts: reasons.append("no_verified_relevant_decision_maker")

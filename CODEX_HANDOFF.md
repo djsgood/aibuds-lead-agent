@@ -78,3 +78,25 @@ User reports OAuth reconnect error. Read-only Railway logs show callback redirec
 and successful /token exchanges, but no confirmed final ChatGPT connection; exact
 error page remains to be identified. Separate Scrapy Cloud startup probe returns
 403. Do not redeploy/restart services or change credentials without approval.
+
+## Latest continuation — full requirement repository update
+
+Read AUTONOMOUS_AGENT_REQUIREMENTS.md and RUNBOOK.md, then DEVELOPMENT.md.
+Default execution changed: run is now a zero-call dry-run; provider work requires
+--execute. The disabled schedule worker passes that flag only if explicitly
+enabled in an approved future deployment. No current schedule was enabled.
+
+New modules: campaign_snapshot.py (read-only suppression import), review.py
+(explicit local version-specific approval and preview; no live handoff),
+intelligence.py (quoted source-based signals, causes unknown), direct_settings.py
+(optional direct Scrapy/Zyte, no OAuth). models.py now supports optional local
+Ollama hypotheses without influencing hard gates. New persisted jobs implement
+backoff and terminal failures; page-level checkpoints resume completed fetches.
+No production campaign importer or sender exists in the agent.
+
+Final local validation: 83 tests + 14 subtests; four MCP tests; both offline
+fixtures; pip check; sdist; git diff --check passed. Remaining live acceptance
+gates, incomplete providers/review collectors, snapshot authority, and platform
+limitations are explicitly recorded in the requirement matrix. No paid calls,
+live Sheet writes, deployment or scheduling occurred. Keep campaign and current
+MCP service branches/configuration unchanged.

@@ -39,7 +39,7 @@ Dry-run has zero provider calls and zero database writes. The example targets
 are illustrative; copy to ignored `config/targets.json` and set your intended
 industries/geographies. There is no requirement to supply business URLs.
 
-An explicitly authorized live run uses the same command without `--dry-run`.
+An explicitly authorized live run uses the same command with `--execute`. Without it, the default is a zero-call dry-run.
 Credentials are read from process environment (or Cloud settings for the Scrapy
 prototype). The CLI intentionally does not silently load another project's .env.
 Set LEAD_AGENT_DB to an absolute path on the worker's mounted `/data` volume.
@@ -77,9 +77,8 @@ status alone cannot prove campaign-state coverage. No live handoff/send command
 exists; staged rows cannot start the campaign.
 
 Cross-business duplicate contacts are rejected; every company is saved once by
-registered domain. Research checkpoints preserve partial progress. Explicit
-re-research/versioning of stale rejected records is still required before
-indefinitely recurring production use. Current job leases assume one host with a
+registered domain. Research checkpoints preserve partial progress. Explicit rejected-only re-research/versioning is implemented; reviewed-record
+re-review and records absent from current discovery results remain future work. Current job leases assume one host with a
 shared SQLite volume and a maximum 10-minute run, not distributed execution.
 
 Daily cost fields are configurable ESTIMATES, not provider price guarantees or
@@ -162,3 +161,25 @@ No crawler extraction logic, deployment, or campaign code was changed. Windows
 Python 3.13 and Scrapy Cloud deployment were not executed here. The direct
 scrapy-zyte-api plugin is a separate integration and has not been added or
 live-tested by this version compatibility change.
+
+## Full autonomous requirement continuation
+
+See AUTONOMOUS_AGENT_REQUIREMENTS.md for the complete implementation/validation
+matrix and RUNBOOK.md for Windows setup, direct transport, local review and
+rollback. The agent defaults to dry-run and requires --execute for provider work.
+Added configured role/email/domain exclusions; persisted per-job retry state and
+metrics; per-page restart checkpoints; read-only campaign snapshot suppression;
+version-bound explicit local approvals and a no-write/no-send handoff preview.
+Added source-attributed operational signal analysis and optional localhost Ollama
+hypotheses that cannot boost scores or create contacts. Added opt-in
+scrapy-zyte-api 0.36 transport with four requests maximum and one SDK attempt.
+
+Final local checks on Python 3.12/Linux with Scrapy 2.19.0: 83 pytest tests +
+14 subtests, four MCP tests, both offline crawler fixtures, pip check, source
+distribution build and whitespace check passed. Direct transport settings and
+classes were checked without a live request. Windows Python 3.13, live Zyte/
+Hunter responses, Ollama inference, campaign export completeness, Google writes,
+CI on GitHub, deployment and scheduling are not claimed tested. No paid provider
+call, external sheet write, campaign import/send, or deployed-service change
+was performed. The snapshot adapter does not establish that an arbitrary file
+is authoritative; operational export coverage is a production acceptance gate.
