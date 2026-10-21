@@ -9,7 +9,6 @@ from fastmcp.server.dependencies import get_access_token
 from starlette.responses import JSONResponse
 from core import fetch_contacts
 import httpx
-from cloud import inspect_cloud_access, cloud_project
 
 REQUIRED = ("GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "PUBLIC_BASE_URL", "JWT_SIGNING_KEY")
 missing = [name for name in REQUIRED if not os.environ.get(name)]
@@ -57,90 +56,5 @@ async def collect_business_contacts(url: str) -> dict:
             raise ValueError(str(exc)) from None
         raise ValueError("Zyte network request failed; retry later.") from None
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True})
-async def list_crawler_spiders() -> dict:
-    """List already-deployed spiders in the configured Scrapy Cloud project (default 882321). Does not deploy code or start jobs."""
-    owner_only()
-    await budget()
-    result = await inspect_cloud_access(os.environ.get("SCRAPY_CLOUD_API_KEY"),
-                                        cloud_project(os.environ.get("SCRAPY_CLOUD_PROJECT_ID", "882321")))
-    if not result["project_access_confirmed"]:
-        raise ValueError("Scrapy Cloud " + result["status"] +
-                         "; " + result.get("action", "Retry the read-only check later; no jobs were started."))
-    return {"project_id":result["project_id"], "spiders":result["spiders"]}
-
-
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
-async def start_lead_generation(industries: list[str], locations: list[str], max_businesses: int = 10) -> dict:
-    """Start one lead_pipeline job in project 882346. Takes industries and locations, NOT website URLs. Uses paid Zyte searches, collects contacts, and saves pending-review leads to the configured Google Sheet. Never sends outreach. Do not retry uncertain scheduling without checking the Cloud Jobs dashboard."""
-    import json
-    owner_only()
-    if (not industries or not locations or len(industries)*len(locations) > 6
-            or not all(isinstance(v, str) and 0 < len(v.strip()) <= 150 for v in industries + locations)
-            or not 1 <= max_businesses <= 50):
-        raise ValueError("Supply 1–6 industry/location combinations and max_businesses between 1 and 50.")
-    key = os.environ.get("SCRAPY_CLOUD_API_KEY", "").strip()
-    if not key:
-        raise ValueError("SCRAPY_CLOUD_API_KEY is not configured.")
-    await budget()
-    try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
-            response = await client.post("https://app.zyte.com/api/run.json", auth=(key, ""),
-                data={"project": "882346", "spider": "lead_pipeline", "industries": json.dumps(industries),
-                      "locations": json.dumps(locations), "max_businesses": str(max_businesses), "write_to_sheets": "true"})
-    except httpx.HTTPError:
-        raise ValueError("Scheduling result is uncertain. Check project 882346 Jobs before retrying.") from None
-    if response.status_code != 200:
-        raise ValueError(f"Scrapy Cloud scheduling failed (HTTP {response.status_code}).")
-    result = response.json()
-    if result.get("status") != "ok" or not str(result.get("jobid", "")).startswith("882346/"):
-        raise ValueError("Cloud did not confirm a pipeline job. Check project deployment, configuration, and Jobs before retrying.")
-    return {"job_id": result["jobid"], "status": "scheduled", "outreach_enabled": False,
-            "next_step": "Retrieve job status and results after the crawler runs."}
-
-
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True})
-async def get_lead_generation_results(job_id: str) -> dict:
-    """Read status and at most 50 collected lead records from a lead-generation job in project 882346. Check sheet_status per record; collected leads are not necessarily saved or qualified. Does not approve or send outreach."""
-    import re
-    owner_only()
-    if not re.fullmatch(r"882346/\d+/\d+", job_id):
-        raise ValueError("Use a job ID in the form 882346/spider_number/job_number.")
-    key = os.environ.get("SCRAPY_CLOUD_API_KEY", "").strip()
-    if not key:
-        raise ValueError("SCRAPY_CLOUD_API_KEY is not configured.")
-    await budget()
-    try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
-            metadata = await client.get("https://storage.zyte.com/jobs/" + job_id, auth=(key, ""), params={"format": "json"})
-            items = await client.get("https://storage.zyte.com/items/" + job_id, auth=(key, ""), params={"format": "json", "count": 50})
-    except httpx.HTTPError:
-        raise ValueError("Cloud results request failed; retry reading later.") from None
-    if metadata.status_code != 200 or items.status_code != 200:
-        raise ValueError(f"Cloud results unavailable (metadata HTTP {metadata.status_code}; items HTTP {items.status_code}).")
-    return {"job_id": job_id, "job": metadata.json(), "leads": items.json(), "maximum_returned": 50,
-            "outreach_enabled": False}
-
-
-async def diagnose_cloud_auth():
-    """One bounded read-only check; logs booleans/statuses, never key values."""
-    import json
-    raw = os.environ.get("SCRAPY_CLOUD_API_KEY", "")
-    result = {"configured": bool(raw), "surrounding_whitespace": raw != raw.strip(),
-              "wrapped_in_quotes": raw.startswith(('"', "'")) or raw.endswith(('"', "'")),
-              "same_as_zyte_api_key": bool(raw) and raw == os.environ.get("ZYTE_API_KEY")}
-    if raw:
-        try:
-            check = await inspect_cloud_access(raw, cloud_project(os.environ.get("SCRAPY_CLOUD_PROJECT_ID", "882321")))
-            result.update({k:v for k,v in check.items() if k != "spiders"})
-        except ValueError:
-            result.update(status="invalid_configuration", project_access_confirmed=False)
-    else:
-        result.update(status="not_configured", project_access_confirmed=False,
-                      optional_for_zyte_extraction=True)
-    print("CLOUD_AUTH_DIAGNOSTIC " + json.dumps(result), flush=True)
-
 if __name__ == "__main__":
-    asyncio.run(diagnose_cloud_auth())
     mcp.run(transport="http", host="0.0.0.0", port=int(os.environ.get("PORT", "8000")))
-

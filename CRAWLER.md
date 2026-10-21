@@ -1,7 +1,7 @@
 # AIBudBots business contacts crawler
 
-Repository: `djsgood/aibuds-lead-agent`; branch: `feat/zyte-mcp`.
-Run commands from the repository root, which contains `scrapy.cfg` and `scrapinghub.yml`.
+Repository: `djsgood/aibuds-lead-agent`.
+Run commands from the repository root, which contains `scrapy.cfg`.
 Crawler code: `aibuds_crawler/`. The Railway MCP code remains in `mcp/`.
 
 ## What it does
@@ -24,9 +24,9 @@ automatic business discovery, or scheduled runs are implemented.
 ## Local test
 
 ```bash
-python -m pip install -r requirements-crawler.txt
+python -m pip install -r requirements-dev.txt
 python -m scrapy list
-python -m unittest discover -s tests -v
+python -m pytest tests -q
 python tests/fixture_crawl.py
 ```
 
@@ -39,26 +39,13 @@ python -m scrapy crawl business_contacts -a urls=https://aibudbots.ai -O reviewe
 `reviewed-leads.json` is still pending review despite the filename. Missing fields
 remain empty. JavaScript-only pages and obfuscated contacts may not be extracted.
 
-## Scrapy Cloud deployment
-
-In project **882321**, select repository `djsgood/aibuds-lead-agent`, branch
-`feat/zyte-mcp`, and repository root. Redeploy the latest commit using the same
-GitHub deployment screen used previously. This is a standard Scrapy deployment,
-not a custom image deployment; the root Dockerfile is for Railway only.
-`scrapinghub.yml` identifies project 882321 and the crawler requirements.
-The project-selected Cloud stack must support Python 3.8+ and the specified Scrapy
-version range; no unverified stack identifier is hardcoded.
-
-After deployment, run `business_contacts` with spider argument:
-
-```text
-urls = https://aibudbots.ai
-```
+## Local spider arguments and discovery
 
 For multiple sites, use a JSON array for `urls` (maximum 10). `max_sites` defaults
 to 10 and `pages_per_site` to 3; they can be reduced but cannot exceed those bounds.
-Review output in the Cloud job's Items tab. Running the crawler directly in Cloud
-does not require the MCP API authentication issue to be solved first.
-
-CLI alternative, when account API authentication works: install `shub`, use
-`shub login` privately, then `shub deploy 882321`. Never commit account keys.
+The example business_contacts spider is URL-driven. The retained lead_pipeline
+spider supports industry/location discovery, but is an extraction prototype; use
+`python -m lead_agent run --config config/targets.example.json` for the persistent
+autonomous runner. It defaults to a zero-call dry-run. See RUNBOOK.md for optional
+direct Zyte transport and explicit execution controls. No external job host is
+required for local Scrapy crawling.
