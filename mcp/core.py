@@ -39,6 +39,12 @@ def extract_contacts(html, source_url):
         tag.decompose()
     visible = soup.get_text(" ", strip=True)
     emails.update(x.lower() for x in re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", visible))
+    # Reserved documentation/test namespaces are placeholders, not prospects.
+    reserved = {"example.com", "example.org", "example.net"}
+    emails = {email for email in emails if not (
+        any(email.rsplit("@",1)[-1] == domain or email.rsplit("@",1)[-1].endswith("."+domain) for domain in reserved)
+        or email.rsplit("@",1)[-1].endswith((".example", ".invalid", ".test", ".localhost"))
+    )}
     return {
         "source_url": source_url,
         "page_title": soup.title.get_text(strip=True) if soup.title else None,

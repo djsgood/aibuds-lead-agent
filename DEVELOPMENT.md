@@ -200,3 +200,22 @@ explicit provider-cost authorization. Railway OAuth only exposes variable names;
 the presence of its key does not imply access from this workspace. No paid calls
 or external writes were performed. The $0.06 harness ceiling is estimated
 accounting, not a provider invoice cap; credits-only usage cannot be guaranteed.
+
+## First live Zyte bridge validation
+
+After explicit owner approval for paid use within the six-request validation,
+one call through the existing connected Zyte MCP app successfully fetched
+https://aibudbots.ai/. This demonstrates that the existing MCP connection and its
+Railway-side Zyte configuration can complete a page extraction. The local managed
+workspace still has neither ZYTE_API_KEY nor OPENAI_API_KEY; no credentials were
+copied/read from Railway. OpenAI was not called. This is not a successful run of
+the two-industry Search acceptance harness, independent mailbox verification,
+or a production readiness claim. No Sheets write, email, service configuration
+change, scheduling, restart or deployment occurred.
+
+The returned page exposed a deployed extractor defect: a demo example.com address
+was included in its published contact list. mcp/core.py on this development branch
+now rejects reserved example/test email domains from both mailto and visible-text
+extraction while retaining source text. A dedicated regression test covers the
+live failure pattern. Five MCP unit tests pass; the 88-test agent suite remains
+passing. This fix is not deployed to the existing MCP service.

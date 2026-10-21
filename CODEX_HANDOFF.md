@@ -114,3 +114,20 @@ Managed environment has no Zyte key; Railway OAuth app only reveals that the
 separate MCP service has it, not its value. Do not ask for keys in chat. The user
 has a pending question choosing credits-only versus approval for six paid calls.
 Do not treat no reply as approval or bypass the original free-only constraint.
+
+## Latest credential/access update
+
+Owner explicitly approved paid API use for the bounded six-request validation,
+superseding the previous credits-only restriction for this test. One live
+collect_business_contacts call through the existing Zyte MCP connection succeeded
+against https://aibudbots.ai/. No other paid provider call was made in that turn.
+Keep the total six-request authorization limit; do not assume general paid usage.
+Neither Zyte nor OpenAI key is present in the local execution environment.
+Remote extraction works without copying them, but the exposed MCP tools do not
+provide Search for the complete multi-industry acceptance harness.
+
+Live result revealed reserved demo email leakage in the deployed bridge. The
+mcp/core.py development fix filters reserved example/test domains, tested by five
+MCP tests plus the 88-test agent suite. Do NOT claim that fix is deployed. Existing
+outreach and MCP services remain unchanged. Local multi-industry Search, Hunter,
+OpenAI, Google writes, deployment and scheduling remain unvalidated/disabled.
