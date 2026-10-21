@@ -1,8 +1,9 @@
 import csv
 import json
+from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 import pytest
-from lead_agent.daily import execute, export_daily, main
+from lead_agent.daily import execute, export_daily, main, target_area_evidence
 from lead_agent.store import Store
 from test_persistent_agent import record
 
@@ -26,14 +27,15 @@ def test_daily_csv_sources_and_unverified_status(tmp_path):
     store = Store(':memory:')
     r = record(); r['business_name'] = '=malicious()'
     r['emails'][0]['verification_status'] = 'unverified'
+    r['research_documents'] = [{'kind':'business_website','source_url':r['website'],'text':'Roofing services in New Martinsville, WV. Request a quote.'}]
     store.save_company(r, 'rejected')
-    report = export_daily(store, tmp_path, '2000-01-01', 25, {'status':'completed'})
+    report = export_daily(store, tmp_path, datetime.now(timezone.utc).date().isoformat(), 25, {'status':'completed'})
     rows = list(csv.DictReader(open(report['list_path'])))
     assert len(rows) == 1 and rows[0]['business_name'].startswith("'=")
     assert rows[0]['outreach_eligible'] == 'False'
     assert rows[0]['evidence_urls'] == 'https://roofbusiness.com/'
     assert report['shortfall'] == 24
-    assert json.load(open(tmp_path/'2000-01-01.json'))['listed'] == 1
+    assert json.load(open(tmp_path/(datetime.now(timezone.utc).date().isoformat()+'.json')))['listed'] == 1
     store.close()
 
 
@@ -41,7 +43,7 @@ def test_daily_does_not_pad_with_unresearched_matches(tmp_path):
     store = Store(':memory:')
     r = record(); r['source_urls'] = []
     store.save_company(r, 'rejected')
-    assert export_daily(store, tmp_path, '2000-01-01', 25, {})['listed'] == 0
+    assert export_daily(store, tmp_path, datetime.now(timezone.utc).date().isoformat(), 25, {})['listed'] == 0
     store.close()
 
 
@@ -90,4 +92,17 @@ def test_daily_rechecks_completion_after_claim(tmp_path):
     with patch.object(store, 'claim', side_effect=claim), patch('lead_agent.daily.run') as run:
         assert execute({'max_businesses':25},store,Mock(),tmp_path,day='2026-10-21')['already_ran_today']
         run.assert_not_called()
+    store.close()
+
+
+@pytest.mark.parametrize('text', ['Roofing in New Martinsville, OH', 'Roofing in Idaho', 'New Martinsville WVille'])
+def test_wrong_state_or_missing_locality_is_not_a_local_lead(text):
+    r=record(); r['research_documents']=[{'kind':'business_website','source_url':r['website'],'text':text}]
+    assert target_area_evidence(r) is None
+
+
+def test_report_does_not_include_another_days_records(tmp_path):
+    store=Store(':memory:'); r=record(); r['research_documents']=[{'kind':'business_website','source_url':r['website'],'text':'New Martinsville, WV'}]
+    store.save_company(r, 'rejected')
+    assert export_daily(store,tmp_path,'2000-01-01',25,{})['listed']==0
     store.close()

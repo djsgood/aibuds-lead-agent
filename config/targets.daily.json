@@ -12,7 +12,7 @@
     "Steubenville, OH",
     "Washington, PA"
   ],
-  "max_businesses": 25,
+  "max_businesses": 50,
   "pages_per_site": 1,
   "max_contacts_per_business": 2,
   "employee_min": 5,
@@ -26,5 +26,6 @@
     "president",
     "operations",
     "general manager"
-  ]
+  ],
+  "daily_target": 25
 }

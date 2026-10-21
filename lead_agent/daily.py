@@ -2,8 +2,9 @@
 import csv
 import json
 import os
+import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from lead_agent.providers import Zyte
@@ -16,12 +17,36 @@ def cell(value):
     return "'" + text if text.startswith(('=', '+', '-', '@', '\t', '\r')) else text
 
 
+def target_area_evidence(record):
+    city, separator, state = str(record.get('target_location', '')).rpartition(',')
+    city, state = city.strip(), state.strip().upper()
+    states = {'WV':'West Virginia', 'OH':'Ohio', 'PA':'Pennsylvania'}
+    if not separator or not city or state not in states:
+        return None
+    pattern = re.compile(r'(?<!\w)' + re.escape(city) + r'[\s,]+(?:' +
+                         re.escape(state) + '|' + re.escape(states[state]) + r')(?![A-Za-z])', re.I)
+    for document in record.get('research_documents', []):
+        if document.get('kind') != 'business_website' or document.get('source_url') not in record.get('source_urls', []):
+            continue
+        text = str(document.get('text', ''))
+        match = pattern.search(text)
+        if match:
+            return {'source_url': document['source_url'],
+                    'quote': text[max(0, match.start()-50):match.end()+70],
+                    'classification':'website_mentions_target_area; headquarters not independently verified'}
+    return None
+
+
 def export_daily(store, directory, day, target, result):
     records = []
-    for row in store.db.execute('SELECT payload FROM companies WHERE updated_at >= ? ORDER BY updated_at', (day,)):
+    start = datetime.fromisoformat(day).replace(tzinfo=timezone.utc)
+    end = start + timedelta(days=1)
+    for row in store.db.execute('SELECT payload FROM companies WHERE updated_at >= ? AND updated_at < ? ORDER BY updated_at',
+                                (start.isoformat(), end.isoformat())):
         record = json.loads(row['payload'])
-        if record.get('source_urls') and record.get('industry_match'):
-            records.append(record)
+        area = target_area_evidence(record)
+        if record.get('source_urls') and record.get('industry_match') and area:
+            records.append({**record, 'target_area_evidence': area})
     records = records[:target]
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
@@ -29,7 +54,7 @@ def export_daily(store, directory, day, target, result):
     path = directory / (day + '.csv')
     temporary = path.with_suffix('.csv.tmp')
     fields = ['lead_id', 'business_name', 'website', 'industry', 'target_location', 'published_emails',
-              'evidence_urls', 'qualification', 'rejection_reasons', 'outreach_eligible']
+              'evidence_urls', 'location_evidence_url', 'location_quote', 'qualification', 'rejection_reasons', 'outreach_eligible']
     with temporary.open('w', newline='') as output:
         writer = csv.DictWriter(output, fieldnames=fields)
         writer.writeheader()
@@ -40,6 +65,8 @@ def export_daily(store, directory, day, target, result):
                 'target_location': record.get('target_location'),
                 'published_emails': '; '.join(c['email'] for c in record.get('emails', [])),
                 'evidence_urls': '; '.join(record['source_urls']),
+                'location_evidence_url': record['target_area_evidence']['source_url'],
+                'location_quote': record['target_area_evidence']['quote'],
                 'qualification': record.get('qualification'),
                 'rejection_reasons': '; '.join(record.get('rejection_reasons', [])),
                 'outreach_eligible': False,
@@ -48,7 +75,8 @@ def export_daily(store, directory, day, target, result):
     temporary.replace(path)
     summary = {**result, 'date_utc': day, 'target': target, 'listed': len(records),
                'shortfall': max(0, target-len(records)), 'list_path': str(path),
-               'outreach_enabled': False, 'budget_basis': 'estimated; not an account-side billing limit'}
+               'outreach_enabled': False, 'budget_basis': 'estimated; not an account-side billing limit',
+               'usage': [dict(row) for row in store.db.execute('SELECT provider,calls,estimated_cost FROM budgets WHERE day=?', (day,))]}
     report = path.with_suffix('.json')
     report_tmp = report.with_suffix('.json.tmp')
     report_tmp.write_text(json.dumps(summary, indent=2))
@@ -71,7 +99,7 @@ def execute(config, store, provider, reports, day=None):
         if previous:
             return {**previous, 'already_ran_today': True}
         result = run(config, store, provider)  # No Hunter/model/Sheets/campaign integration.
-        summary = export_daily(store, reports, day, config['max_businesses'], result)
+        summary = export_daily(store, reports, day, config.get('daily_target', config['max_businesses']), result)
         if result.get('status') not in ('another_run_active', 'discovery_failed', 'failed'):
             store.checkpoint(checkpoint, summary)
         return summary
@@ -88,7 +116,9 @@ def main():
     config = load_config(os.environ.get('LEAD_AGENT_CONFIG', 'config/targets.daily.json'))
     if not os.environ.get('ZYTE_API_KEY'):
         raise SystemExit('ZYTE_API_KEY unavailable; no provider calls made')
+    os.umask(0o077)
     store = Store(path)
+    os.chmod(path, 0o600)
     provider = None
     try:
         provider = Zyte(os.environ['ZYTE_API_KEY'], store, {
