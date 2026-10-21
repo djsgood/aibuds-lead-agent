@@ -11,6 +11,9 @@ from aibuds_crawler.spiders.business_contacts import BusinessContactsSpider
 
 
 class FixtureHandler:
+    def close(self):
+        pass
+
     def download_request(self, request, spider):
         from twisted.internet.defer import succeed
         if request.url.endswith("robots.txt"):

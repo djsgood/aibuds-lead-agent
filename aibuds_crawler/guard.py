@@ -21,6 +21,9 @@ def public_url(value):
 
 class PublicTargetGuard:
     def process_request(self, request, spider):
+        if (getattr(spider, "name", "") == "lead_pipeline" and request.meta.get("zyte_discovery")
+                and request.url == "https://api.zyte.com/v1/search" and request.method == "POST"):
+            return
         try:
             public_url(request.url)
         except ValueError as exc:

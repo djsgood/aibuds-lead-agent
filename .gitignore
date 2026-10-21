@@ -218,3 +218,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+.env
+.env.*
+!.env.example
+data/
+*.sqlite3*
+config/targets.json
+outputs/
