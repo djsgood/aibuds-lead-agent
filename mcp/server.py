@@ -9,6 +9,7 @@ from fastmcp.server.dependencies import get_access_token
 from starlette.responses import JSONResponse
 from core import fetch_contacts
 import httpx
+from cloud import inspect_cloud_access, cloud_project
 
 REQUIRED = ("GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "PUBLIC_BASE_URL", "JWT_SIGNING_KEY")
 missing = [name for name in REQUIRED if not os.environ.get(name)]
@@ -58,38 +59,15 @@ async def collect_business_contacts(url: str) -> dict:
 
 @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True})
 async def list_crawler_spiders() -> dict:
-    """List already-deployed spiders in the owner's fixed Scrapy Cloud project. Does not deploy code or start jobs."""
+    """List already-deployed spiders in the configured Scrapy Cloud project (default 882321). Does not deploy code or start jobs."""
     owner_only()
-    key = os.environ.get("SCRAPY_CLOUD_API_KEY")
-    if not key:
-        raise ValueError("SCRAPY_CLOUD_API_KEY is not configured; this is separate from ZYTE_API_KEY.")
     await budget()
-    async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
-        response = await client.get("https://app.zyte.com/api/spiders/list.json",
-            params={"project": "882321"}, auth=(key, ""))
-    if response.status_code != 200:
-        # Return bounded diagnostics without echoing credentials or raw HTML.
-        content_type = response.headers.get("content-type", "").split(";")[0]
-        detail = "No structured error returned."
-        try:
-            payload = response.json()
-            if isinstance(payload, dict):
-                fields = {name: payload[name] for name in ("error", "message", "detail", "status") if isinstance(payload.get(name), (str, int, bool))}
-                import json
-                import re
-                detail = json.dumps(fields)[:1000]
-                for secret_name in ("SCRAPY_CLOUD_API_KEY", "ZYTE_API_KEY", "GITHUB_CLIENT_SECRET", "JWT_SIGNING_KEY"):
-                    secret = os.environ.get(secret_name)
-                    if secret:
-                        detail = detail.replace(secret, "[redacted]")
-                detail = re.sub(r"[A-Za-z0-9_+/=-]{24,}", "[redacted]", detail)
-        except ValueError:
-            detail = "HTML gateway/access-denied response." if "html" in content_type else detail
-        raise ValueError(f"Scrapy Cloud HTTP {response.status_code}; type={content_type}; {detail}")
-    data = response.json()
-    if data.get("status") != "ok":
-        raise ValueError("Scrapy Cloud could not list spiders. Check the project key permissions.")
-    return {"project_id": "882321", "spiders": data.get("spiders", [])}
+    result = await inspect_cloud_access(os.environ.get("SCRAPY_CLOUD_API_KEY"),
+                                        cloud_project(os.environ.get("SCRAPY_CLOUD_PROJECT_ID", "882321")))
+    if not result["project_access_confirmed"]:
+        raise ValueError("Scrapy Cloud " + result["status"] +
+                         "; " + result.get("action", "Retry the read-only check later; no jobs were started."))
+    return {"project_id":result["project_id"], "spiders":result["spiders"]}
 
 
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
@@ -153,12 +131,13 @@ async def diagnose_cloud_auth():
               "same_as_zyte_api_key": bool(raw) and raw == os.environ.get("ZYTE_API_KEY")}
     if raw:
         try:
-            async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
-                response = await client.get("https://jobq.zyte.com/jobq/882321/count", auth=(raw.strip(), ""))
-            result["independent_jobq_http_status"] = response.status_code
-            result["project_access_confirmed"] = response.status_code == 200
-        except httpx.HTTPError:
-            result["independent_check"] = "network_error"
+            check = await inspect_cloud_access(raw, cloud_project(os.environ.get("SCRAPY_CLOUD_PROJECT_ID", "882321")))
+            result.update({k:v for k,v in check.items() if k != "spiders"})
+        except ValueError:
+            result.update(status="invalid_configuration", project_access_confirmed=False)
+    else:
+        result.update(status="not_configured", project_access_confirmed=False,
+                      optional_for_zyte_extraction=True)
     print("CLOUD_AUTH_DIAGNOSTIC " + json.dumps(result), flush=True)
 
 if __name__ == "__main__":

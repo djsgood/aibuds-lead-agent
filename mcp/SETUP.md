@@ -50,3 +50,34 @@ The request budget is 30 upstream requests/hour/process, not a durable billing c
 Redirects are disabled; supply the final HTTPS business URL. Private/IP targets are rejected; URLs are fetched remotely by Zyte, never directly by this server.
 Extraction can miss obfuscated contacts, images or JavaScript-only content; no deliverability or business identity guarantee.
 This is a private first integration, not a finished lead-generation product.
+
+## Diagnose Scrapy Cloud access independently of Zyte API
+
+The successful Zyte API page test does not validate SCRAPY_CLOUD_API_KEY. A live
+spider-list response returned HTTP 403 with `{"message":"Authentication failed","status":"error"}`. This is an authentication rejection, not proof of an invalid
+spider, a broken MCP startup, or missing project permission alone. Never fix it
+by disabling authentication, resetting a project or replacing ZYTE_API_KEY.
+
+The development check now reads the actual spiders/list.json endpoint and
+requires HTTP 200 plus status=ok and a spiders list before declaring access ready.
+It distinguishes authentication_failed, access_denied, rate_limited, network_error
+and response_schema_mismatch without logging upstream bodies/keys. Startup checks
+are read-only and optional for standalone Zyte page extraction.
+
+Use SCRAPY_CLOUD_PROJECT_ID to select the spider-list/diagnostic project (default
+882321; pipeline project is 882346). It does not redirect scheduling/results
+tools, which remain scoped to the existing pipeline project. Select only a project
+you actually own. Correct account credentials and project membership still need
+verification before any Cloud job is run.
+
+In the separate Railway service aibudbots-zyte-mcp, replace only
+SCRAPY_CLOUD_API_KEY with the API key from the owner's Scrapy Cloud account using
+private variables. Do not paste it into chat or change the working ZYTE_API_KEY.
+Connected Railway OAuth tools expose variable names only, so Codex cannot read
+or repair the secret. Do not change the outreach service's variables or state.
+After the owner applies a corrected key, retry the read-only spider listing; a
+200/status=ok result is required. No job scheduling or paid Zyte calls are needed.
+
+These source changes are on dev/autonomous-lead-pipeline. Do not claim the live
+feat/zyte-mcp service is running them until an explicitly approved deployment is
+verified. The service was not redeployed by this diagnostic work.

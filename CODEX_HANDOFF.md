@@ -131,3 +131,22 @@ mcp/core.py development fix filters reserved example/test domains, tested by fiv
 MCP tests plus the 88-test agent suite. Do NOT claim that fix is deployed. Existing
 outreach and MCP services remain unchanged. Local multi-industry Search, Hunter,
 OpenAI, Google writes, deployment and scheduling remain unvalidated/disabled.
+
+## Scrapy Cloud 403 investigation
+
+Live list_crawler_spiders returned application/json HTTP 403, Authentication failed.
+Zyte page extraction previously succeeded; these are distinct account services.
+No Cloud API key is available locally and Railway OAuth only returns variable
+names, so the live secret could not be corrected by Codex. Owner was asked to
+replace SCRAPY_CLOUD_API_KEY privately on the separate MCP service, keeping
+ZYTE_API_KEY unchanged. No credentials, services or deployments were changed.
+
+Development mcp/cloud.py now validates credentials/project IDs and checks the real
+spider-list endpoint. server.py uses it for tool access and startup diagnostics
+instead of treating the independent jobq status as definitive project access.
+Errors are classified without logging provider bodies; SCRAPY_CLOUD_PROJECT_ID
+configures read-only listing/diagnostics, not scheduling/results project scope.
+Six new regression tests pass, covering the observed error, permission denial,
+invalid success payloads, secret redaction, key/project validation and network
+failure. See mcp/SETUP.md. Live access remains unresolved until the corrected
+account key passes a read-only listing; do not claim the development fix deployed.
