@@ -1,4 +1,4 @@
-Scrapy>=2.11,<2.14
+Scrapy>=2.19,<2.20
 # Scrapy Cloud builds setup.py eggs; retain bdist_egg support.
 setuptools==80.9.0
 google-auth>=2.40,<3

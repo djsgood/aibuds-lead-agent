@@ -150,3 +150,15 @@ This does not prove the final ChatGPT connection was recorded. User reports
 startup diagnostic reports Scrapy Cloud jobq HTTP 403. No credentials were
 read or changed and no service was restarted/redeployed. Do not conflate that
 upstream authorization issue with the final OAuth connection error.
+
+## Scrapy 2.19 compatibility
+
+Updated requirements-crawler.txt to Scrapy>=2.19,<2.20 after testing 2.19.0
+on Python 3.12/Linux. All 65 pytest tests and 14 subtests pass. Both real-engine
+offline crawl fixtures pass. Fixture download handlers now provide close();
+Scrapy remote control is explicitly disabled alongside the existing telnet
+console, so no extra local control server/state directory is started.
+No crawler extraction logic, deployment, or campaign code was changed. Windows
+Python 3.13 and Scrapy Cloud deployment were not executed here. The direct
+scrapy-zyte-api plugin is a separate integration and has not been added or
+live-tested by this version compatibility change.

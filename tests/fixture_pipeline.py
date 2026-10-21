@@ -38,6 +38,9 @@ class FixtureSheetsPipeline(ReviewSheetsPipeline):
 
 
 class FixtureHandler:
+    def close(self):
+        pass
+
     def download_request(self, request, spider):
         from twisted.internet.defer import succeed
         if request.url == "https://api.zyte.com/v1/search":
