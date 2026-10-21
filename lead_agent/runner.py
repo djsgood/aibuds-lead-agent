@@ -18,7 +18,7 @@ def validate_config(config):
     config=dict(config)
     config["industries"]=parse_list(config.get("industries"),"industries")
     config["locations"]=parse_list(config.get("locations"),"locations")
-    if len(config["industries"])*len(config["locations"])>6: raise ValueError("Maximum six target combinations per run")
+    if len(config["industries"])*len(config["locations"])>24: raise ValueError("Maximum 24 target combinations per run")
     if not 1 <= config.get("max_businesses",10) <= 50: raise ValueError("max_businesses must be 1–50")
     if not 1 <= config.get("pages_per_site",3) <= 3: raise ValueError("pages_per_site must be 1–3")
     if not 1 <= config.get("max_contacts_per_business",2) <= 3: raise ValueError("max_contacts_per_business must be 1–3")
