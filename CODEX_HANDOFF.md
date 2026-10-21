@@ -89,3 +89,13 @@ the requested cleanup branch label in two CI workflows and this handoff. Generic
 remote/local model terminology is unrelated and retained. Existing Git history
 is preserved; old commits may still contain removed implementation/instructions.
 No live provider request, external write or service operation was performed.
+
+## MCP discovery entrypoint
+
+Branch `feat/mcp-autonomous-discovery` connects owner-authenticated
+`discover_new_leads` to the existing persistent Python runner. No input URLs are
+required. It supports industry/location targets, default zero-side-effect preview,
+per-run paid-attempt caps, daily budgets, domain deduplication, and sourced research.
+It never calls Hunter, writes Sheets, sends outreach, or enables scheduling.
+Default container SQLite is ephemeral: durable storage and a separately validated
+worker deployment remain requirements for continuous unattended operation.

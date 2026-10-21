@@ -54,3 +54,25 @@ The suite checks extraction, placeholder filtering, mocked Zyte authentication,
 URL restrictions, owner checks, the single-tool contract and network-free startup.
 A live OAuth round trip and Zyte request require private configuration and
 separate validation. Never interpret unit-test success as production readiness.
+
+### Discover businesses without supplying URLs
+
+`discover_new_leads(industries=["roofing"], locations=["New Martinsville, WV"],
+max_businesses=1, max_api_requests=3, dry_run=true)` previews targets without
+network calls or database writes. Set `dry_run=false` explicitly for paid search
+and website research. Every upstream attempt, including retries, counts toward
+the per-run limit (1–10); persistent daily limits also apply. Results include new
+prospects and research status. Repeat runs deduplicate previously saved domains.
+This tool never sends email, writes Sheets, or automatically hands off contacts.
+No independent verifier is called, so contacts remain outreach-ineligible.
+
+The MCP image includes the existing Python pipeline and retained crawler. SQLite
+defaults to `/home/appuser/lead-agent.sqlite3`. Set `LEAD_AGENT_DB` to a writable
+persistent volume path before relying on deduplication across deployments; the
+container default is ephemeral. A mount is not automatically provisioned. The
+existing worker is the separate scheduled execution path; this tool runs one
+bounded discovery batch per invocation and does not enable a background schedule.
+After deploying, refresh the connected app's tool list to expose
+`discover_new_leads` alongside `collect_business_contacts`. No Cloud spider tools
+are restored. Provider search access must be validated live before claiming that
+new lead discovery works in production.
