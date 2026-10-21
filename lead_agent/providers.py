@@ -1,5 +1,6 @@
 """Small provider adapters. No guessed contact facts or unbudgeted retries."""
 import base64
+import hashlib
 import re
 import time
 import requests
@@ -66,17 +67,76 @@ class HTTPProvider:
 
 
 class Zyte(HTTPProvider):
-    def __init__(self, key, store, budget, session=None, search_domain="google.com"):
+    def __init__(self, key, store, budget, session=None, search_domain="google.com", search_mode="api"):
         super().__init__("zyte", "https://api.zyte.com/v1/", key, store, budget, session)
         self.search_domain = search_domain
+        if search_mode not in ("api", "html"): raise ValueError("Unsupported Zyte search mode")
+        self.search_mode = search_mode
 
     def search(self, query):
+        if self.search_mode == "html":
+            return self.search_html(query)
         result = self.call("search", "POST", auth=(self.key,""), json={"domain":self.search_domain,
             "query":query,"include":["organic"],"maxResults":20,
             "queryParameters":{"style":"generic","geolocation":"US","locale":"en-US"}})
         if result.get("status") != "success" or not isinstance(result.get("organicResults"), list):
             raise ProviderFailure("Zyte search schema mismatch")
         return {"source_url":result.get("url", ""), "results":result["organicResults"], "retrieved_at":now()}
+
+    def search_html(self, query):
+        from bs4 import BeautifulSoup
+        from urllib.parse import urlencode, urlsplit, parse_qs, urljoin
+        from aibuds_crawler.discovery import business_url, domain_key
+        if self.search_domain not in ("google.com", "www.google.com"):
+            raise ProviderFailure("HTML discovery currently supports Google only")
+        if not isinstance(query, str) or not 1 <= len(query) <= 2048:
+            raise ValueError("Search query must contain 1–2048 characters")
+        from lead_agent.store import Store
+        persistent = isinstance(self.store, Store)
+        fingerprint = hashlib.sha256(query.encode()).hexdigest()
+        cache_key = "html_search:" + now()[:10] + ":" + fingerprint
+        cursor_key = "html_search_cursor:" + fingerprint
+        cursor = self.store.get_checkpoint(cursor_key) if persistent else None
+        if persistent:
+            cached = self.store.get_checkpoint(cache_key)
+            if cached is not None: return cached
+        offset = cursor.get("offset", 0) if isinstance(cursor, dict) else 0
+        if type(offset) is not int or offset not in range(0, 100, 10): offset = 0
+        params = {"q":query,"num":10,"hl":"en","gl":"us"}
+        if offset: params["start"] = offset
+        source = "https://www.google.com/search?" + urlencode(params)
+        soup = BeautifulSoup(self.fetch(source), "html.parser")
+        text = soup.get_text(" ", strip=True).lower()
+        if any(signal in text for signal in ("our systems have detected unusual traffic", "verify you are human", "before you continue to google")):
+            raise ProviderFailure("Search returned a challenge or consent page; discovery deferred")
+        results, seen = [], set()
+        for anchor in soup.select("a[href]"):
+            heading = anchor.find("h3")
+            if heading is None and anchor.get_text(" ",strip=True).lower() != "website":
+                continue
+            href = urljoin(source, anchor.get("href", ""))
+            parsed = urlsplit(href)
+            if parsed.hostname in ("google.com", "www.google.com") and parsed.path == "/url":
+                params = parse_qs(parsed.query)
+                href = (params.get("q") or params.get("url") or [""])[0]
+            try:
+                website = business_url(href)
+                if not website: continue
+                domain = domain_key(website)
+                if domain in ("googleadservices.com", "doubleclick.net") or domain in seen: continue
+            except (ValueError, TypeError):
+                continue
+            seen.add(domain)
+            results.append({"url":website,"title":heading.get_text(" ",strip=True) if heading else "Published website link"})
+        if not results and not any(phrase in text for phrase in ("did not match any documents", "no results found")):
+            raise ProviderFailure("Search HTML contained no supported business links; parser or provider response needs review")
+        result = {"source_url":source,"results":results[:20],"retrieved_at":now()}
+        if persistent:
+            # Cache and advance together: interrupted jobs cannot silently skip a page.
+            with self.store.transaction():
+                self.store.checkpoint(cache_key, result)
+                self.store.checkpoint(cursor_key, {"offset": (offset+10) % 100 if results else 0})
+        return result
 
     def fetch(self, url):
         from aibuds_crawler.guard import public_url

@@ -106,3 +106,10 @@ def test_report_does_not_include_another_days_records(tmp_path):
     store.save_company(r, 'rejected')
     assert export_daily(store,tmp_path,'2000-01-01',25,{})['listed']==0
     store.close()
+
+
+def test_local_match_can_be_any_owner_approved_city():
+    r=record(); r['research_documents']=[{'kind':'business_website','source_url':r['website'],'text':'Roofing in Wheeling, WV'}]
+    locations=['New Martinsville, WV', 'Wheeling, WV']
+    assert target_area_evidence(r,locations)['target_location']=='Wheeling, WV'
+    assert target_area_evidence(r,['Washington, PA']) is None
