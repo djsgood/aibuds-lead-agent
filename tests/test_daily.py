@@ -4,7 +4,9 @@ from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 import pytest
 from lead_agent.daily import execute, export_daily, main, target_area_evidence
-from lead_agent.store import Store
+from lead_agent.providers import ProviderFailure
+from lead_agent.store import BudgetExceeded, Store
+from aibuds_crawler.discovery import domain_key
 from test_persistent_agent import record
 
 
@@ -71,6 +73,72 @@ def test_provider_failure_can_resume_after_configuration_repair(tmp_path):
     with patch('lead_agent.daily.run', return_value={'status':'completed'}) as run:
         execute({'max_businesses':25}, store, Mock(), tmp_path, day='2026-10-21')
         run.assert_called_once()
+    store.close()
+
+
+def test_completed_with_errors_resumes_same_day_without_repeating_work_or_budget(tmp_path):
+    store = Store(tmp_path/'resume.sqlite3')
+
+    class Provider:
+        def __init__(self):
+            self.searches = 0
+            self.fetches = {}
+            self.failures_left = 2
+
+        def charge(self):
+            store.reserve_call('zyte', max_calls=7, max_cost=1, estimated_cost=.1)
+
+        def search(self, query):
+            self.charge()
+            self.searches += 1
+            return {'source_url':'https://google.com/search?q=roofing', 'retrieved_at':'2026-10-21T00:00:00Z',
+                    'results':[{'url':'https://goodroof.com/'}, {'url':'https://retryroof.com/'}]}
+
+        def fetch(self, url):
+            self.charge()
+            self.fetches[url] = self.fetches.get(url, 0) + 1
+            if url == 'https://retryroof.com/robots.txt' and self.failures_left:
+                self.failures_left -= 1
+                raise ProviderFailure('Website HTTP 503')
+            if url.endswith('/robots.txt'):
+                return 'User-agent: *\nAllow: /'
+            name = 'Good' if 'goodroof' in url else 'Retry'
+            return f'''<body>Roofing in New Martinsville, WV. Request a quote.
+            <script type="application/ld+json">{{"@type":"RoofingContractor","name":"{name} Roofing","address":{{"addressCountry":"US"}}}}</script></body>'''
+
+    provider = Provider()
+    config = {'industries':['roofing'], 'locations':['New Martinsville, WV'], 'max_businesses':2,
+              'pages_per_site':1, 'daily_target':2}
+    day = datetime.now(timezone.utc).date().isoformat()
+
+    first = execute(config, store, provider, tmp_path/'reports', day=day)
+    assert first['status'] == 'completed_with_errors'
+    assert store.get_checkpoint('daily:' + day) is None
+    assert store.metrics()['companies'] == 1
+    assert store.metrics()['budgets'][0]['calls'] == 4
+
+    retry_key = 'research:' + domain_key('https://retryroof.com/')
+    assert store.db.execute('SELECT failures FROM jobs WHERE job_key=?', (retry_key,)).fetchone()[0] == 1
+    store.db.execute('UPDATE jobs SET retry_at=0 WHERE job_key=?', (retry_key,))
+    second = execute(config, store, provider, tmp_path/'reports', day=day)
+    assert second['status'] == 'completed_with_errors'
+    assert store.get_checkpoint('daily:' + day) is None
+    assert store.metrics()['companies'] == 1
+    assert store.metrics()['budgets'][0]['calls'] == 5
+    assert store.db.execute('SELECT failures FROM jobs WHERE job_key=?', (retry_key,)).fetchone()[0] == 2
+    store.db.execute('UPDATE jobs SET retry_at=0 WHERE job_key=?', (retry_key,))
+
+    third = execute(config, store, provider, tmp_path/'reports', day=day)
+    assert third['status'] == 'completed'
+    assert third['listed'] == 2
+    assert store.metrics()['companies'] == 2
+    assert store.metrics()['budgets'][0]['calls'] == 7
+    assert provider.searches == 1
+    assert provider.fetches['https://goodroof.com/robots.txt'] == 1
+    assert provider.fetches['https://goodroof.com/'] == 1
+    assert store.db.execute('SELECT failures FROM jobs WHERE job_key=?', (retry_key,)).fetchone()[0] == 2
+    with pytest.raises(BudgetExceeded):
+        store.reserve_call('zyte', max_calls=7, max_cost=1, estimated_cost=.1)
     store.close()
 
 
