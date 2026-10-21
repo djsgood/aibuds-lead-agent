@@ -67,6 +67,9 @@ def execute(config, store, provider, reports, day=None):
     if not store.claim('daily', owner, seconds=900):
         return {'status': 'another_daily_run_active', 'outreach_enabled': False}
     try:
+        previous = store.get_checkpoint(checkpoint)
+        if previous:
+            return {**previous, 'already_ran_today': True}
         result = run(config, store, provider)  # No Hunter/model/Sheets/campaign integration.
         summary = export_daily(store, reports, day, config['max_businesses'], result)
         if result.get('status') not in ('another_run_active', 'discovery_failed', 'failed'):
