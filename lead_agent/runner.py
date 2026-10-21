@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from aibuds_crawler.discovery import parse_list, business_url, domain_key, lead_id
 from lead_agent.store import Store, BudgetExceeded, now
-from lead_agent.providers import Zyte, Hunter, ProviderFailure
+from lead_agent.providers import Zyte, Hunter, OpenWeb, VibeProspecting, ProviderFailure
 from lead_agent.research import research, strict_qualification, relevant_role, fresh_verification
 
 
@@ -19,6 +19,7 @@ def load_config(path):
     if not 1 <= config.get("pages_per_site",3) <= 3: raise ValueError("pages_per_site must be 1–3")
     if not 1 <= config.get("max_contacts_per_business",2) <= 3: raise ValueError("max_contacts_per_business must be 1–3")
     if not 30 <= config.get("max_runtime_seconds",600) <= 600: raise ValueError("Runtime must be 30–600 seconds")
+    if not 0 <= config.get("min_verified_prospects_daily",0) <= 100: raise ValueError("min_verified_prospects_daily must be 0–100")
     if config.get("refresh_rejected_before"):
         cutoff=datetime.fromisoformat(config["refresh_rejected_before"])
         if cutoff.tzinfo is None or cutoff > datetime.now(timezone.utc):
@@ -147,9 +148,16 @@ def run(config, store, zyte, hunter=None, interpreter=None):
     finally:
         if status=="completed" and counts["errors"]: status="completed_with_errors"
         elif status=="completed" and counts["researched"]==0: status="no_new_prospects"
+        minimum=int(config.get("min_verified_prospects_daily",0))
+        shortfall=max(0, minimum-counts["qualified"])
+        if status in ("completed","completed_with_errors","no_new_prospects") and shortfall:
+            status="daily_minimum_not_met"
         store.end_run(run_id,status)
         store.release("worker",run_id)
-    return {"run_id":run_id,"status":status,**counts,"outreach_enabled":False}
+    return {"run_id":run_id,"status":status,**counts,
+            "minimum_verified_prospects_daily":int(config.get("min_verified_prospects_daily",0)),
+            "qualified_shortfall":max(0, int(config.get("min_verified_prospects_daily",0))-counts["qualified"]),
+            "outreach_enabled":False}
 
 
 def main(argv=None):
@@ -193,7 +201,13 @@ def main(argv=None):
             store.suppress(args.kind,args.value,args.reason); result={"status":"suppressed"}
         else:
             budget={"max_calls":int(os.environ.get("LEAD_AGENT_MAX_DAILY_CALLS","60")),"max_cost":float(os.environ.get("LEAD_AGENT_MAX_DAILY_COST_USD","1")),"estimated_cost":float(os.environ.get("LEAD_AGENT_ESTIMATED_CALL_COST_USD","0.01"))}
-            zyte=Zyte(os.environ.get("ZYTE_API_KEY"),store,budget,search_domain=os.environ.get("ZYTE_SEARCH_DOMAIN","google.com"))
+            provider_name=os.environ.get("LEAD_AGENT_DISCOVERY_PROVIDER","open_web").strip().lower()
+            if provider_name=="zyte":
+                zyte=Zyte(os.environ.get("ZYTE_API_KEY"),store,budget,search_domain=os.environ.get("ZYTE_SEARCH_DOMAIN","google.com"))
+            elif provider_name=="vibe_prospecting":
+                zyte=VibeProspecting(os.environ.get("VIBE_PROSPECTING_API_KEY"),store,budget,base=os.environ.get("VIBE_PROSPECTING_BASE_URL","https://api.vibe-prospecting.ai/v1/"))
+            else:
+                zyte=OpenWeb(store,budget,search_url=os.environ.get("OPEN_WEB_SEARCH_URL","https://duckduckgo.com/html/"))
             hunter=Hunter(os.environ["HUNTER_API_KEY"],store,{"max_calls":int(os.environ.get("HUNTER_MAX_DAILY_CALLS","10")),"max_cost":float(os.environ.get("HUNTER_MAX_DAILY_COST_USD","1")),"estimated_cost":float(os.environ.get("HUNTER_ESTIMATED_CALL_COST_USD","0.05"))}) if os.environ.get("HUNTER_API_KEY") else None
             interpreter=None
             if os.environ.get("OLLAMA_MODEL"):
@@ -201,5 +215,5 @@ def main(argv=None):
                 interpreter=OllamaInterpreter(os.environ["OLLAMA_MODEL"])
             result=run(config,store,zyte,hunter,interpreter)
         print(json.dumps(result,indent=2))
-        return 0 if result.get("status") not in ("failed","discovery_failed","completed_with_errors") and not result.get("uncertain") and not result.get("verification_or_qualification_blocked") else 1
+        return 0 if result.get("status") not in ("failed","discovery_failed","completed_with_errors","daily_minimum_not_met") and not result.get("uncertain") and not result.get("verification_or_qualification_blocked") else 1
     finally: store.close()

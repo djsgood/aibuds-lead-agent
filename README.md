@@ -15,3 +15,4 @@ This branch is not production-ready or approved for deployment.
 
 `python -m lead_agent run --config config/targets.example.json` now defaults to
 a zero-call dry-run. `--execute` explicitly enables budgeted research only.
+Default discovery uses non-Zyte Open Web search/crawl (`LEAD_AGENT_DISCOVERY_PROVIDER=open_web`); `zyte` and `vibe_prospecting` remain optional provider modes.

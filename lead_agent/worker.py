@@ -14,9 +14,16 @@ def main():
     interval=int(os.environ.get("LEAD_AGENT_INTERVAL_SECONDS", "86400"))
     if interval < 3600: raise SystemExit("Minimum schedule interval is one hour.")
     config=os.environ.get("LEAD_AGENT_CONFIG", "config/targets.json")
+    autostage=os.environ.get("LEAD_AGENT_AUTO_STAGE", "true").lower() == "true"
     while True:
         result=subprocess.run([sys.executable,"-m","lead_agent","run","--config",config,"--execute"],check=False)
-        print('{"event":"scheduled_run_finished","exit_code":'+str(result.returncode)+'}',flush=True)
+        stage_code=None
+        if autostage and result.returncode == 0:
+            stage_code=subprocess.run([sys.executable,"-m","lead_agent","stage"],check=False).returncode
+        message='{"event":"scheduled_run_finished","run_exit_code":'+str(result.returncode)
+        if stage_code is not None: message+=',"stage_exit_code":'+str(stage_code)
+        message+="}"
+        print(message,flush=True)
         time.sleep(interval)
 
 

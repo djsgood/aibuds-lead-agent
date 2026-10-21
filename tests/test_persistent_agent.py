@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 import pytest
 from lead_agent.store import Store, BudgetExceeded
-from lead_agent.providers import Hunter, Zyte, ProviderFailure
+from lead_agent.providers import Hunter, Zyte, OpenWeb, ProviderFailure
 from lead_agent.runner import run, main
 from lead_agent.research import research, strict_qualification
 from lead_agent.handoff import stage, LIVE_HEADERS
@@ -64,6 +64,29 @@ def test_atomic_budget_counts_failed_attempts(db):
     with patch("lead_agent.providers.time.sleep"), pytest.raises(BudgetExceeded): provider.search("roofing")
     assert session.request.call_count==1
     assert db.metrics()["budgets"][0]["calls"]==1
+
+
+def test_open_web_search_and_fetch_normalize_https_and_budget(db):
+    import requests
+    session=Mock()
+    def respond(method,url,**kwargs):
+        response=requests.Response()
+        response.status_code=200
+        if "duckduckgo" in url:
+            response._content=b'<html><a class="result__a" href="/l/?kh=-1&uddg=https%3A%2F%2Froofbusiness.com%2Fcontact">Roof</a></html>'
+            response.headers["Content-Type"]="text/html"
+            response.url=url+"?q=test"
+        else:
+            response._content=b"<html><body>ok</body></html>"
+            response.headers["Content-Type"]="text/html"
+            response.url=url
+        return response
+    session.request.side_effect=respond
+    provider=OpenWeb(db,{"max_calls":3,"max_cost":1,"estimated_cost":0.01},session)
+    result=provider.search("roofing")
+    assert result["results"][0]["url"]=="https://roofbusiness.com/contact"
+    assert "ok" in provider.fetch("https://roofbusiness.com/contact")
+    assert db.metrics()["budgets"][0]["calls"]==2
 
 
 def test_nonfinite_budget_rejected(db):
@@ -184,3 +207,12 @@ def test_missing_verifier_rejects_instead_of_qualifying(db):
     result=run({"industries":["roofing"],"locations":["New Martinsville, WV"]},db,FakeZyte())
     assert result["qualified"]==0 and result["rejected"]==1
     assert db.metrics()["outbox"]=={}
+
+
+def test_daily_minimum_shortfall_changes_status(db):
+    provider=FakeZyte()
+    config={"industries":["roofing"],"locations":["New Martinsville, WV"],"min_verified_prospects_daily":2}
+    result=run(config,db,provider,FakeHunter())
+    assert result["status"]=="daily_minimum_not_met"
+    assert result["qualified"]==1
+    assert result["qualified_shortfall"]==1

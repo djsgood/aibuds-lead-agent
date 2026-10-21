@@ -5,9 +5,7 @@ from datetime import datetime, timezone, timedelta
 from urllib.parse import urlsplit, urljoin
 from urllib.robotparser import RobotFileParser
 from bs4 import BeautifulSoup
-import scrapy
-from scrapy.http import HtmlResponse
-from aibuds_crawler.spiders.business_contacts import BusinessContactsSpider
+from aibuds_crawler.spiders.business_contacts import published_email
 from aibuds_crawler.discovery import qualify, domain_key
 from aibuds_crawler.guard import public_url
 from lead_agent.store import now
@@ -15,6 +13,7 @@ from lead_agent.providers import ProviderFailure
 
 RELEVANT_ROLES = ("owner", "founder", "general manager", "operations", "office manager", "marketing", "sales", "president", "ceo", "chief executive")
 GENERIC = {"info","hello","contact","support","sales","admin","office","team","service","enquiries","inquiries"}
+EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
 
 def relevant_role(role):
@@ -31,9 +30,40 @@ def structured_nodes(soup):
         yield from (node for node in pending if isinstance(node,dict))
 
 
+def extract_contacts_and_links(soup, url):
+    phones = {}
+    emails = set()
+    links = []
+    for href in soup.select('a[href^="mailto:"]'):
+        value = str(href.get("href", "")).removeprefix("mailto:").split("?")[0]
+        for raw in value.split(","):
+            if email := published_email(raw):
+                emails.add(email)
+    for href in soup.select('a[href^="tel:"]'):
+        value = str(href.get("href", "")).removeprefix("tel:").split("?")[0].strip()
+        digits = re.sub(r"\D", "", value)
+        if 7 <= len(digits) <= 15:
+            phones.setdefault(digits, value)
+    visible = " ".join(soup.stripped_strings)
+    for match in EMAIL.findall(visible):
+        if email := published_email(match):
+            emails.add(email)
+    for anchor in soup.select("a[href]"):
+        href = anchor.get("href", "").strip()
+        if not href:
+            continue
+        try:
+            candidate = public_url(urljoin(url, href))
+        except ValueError:
+            continue
+        path = urlsplit(candidate).path.lower()
+        if any(word in path for word in ("contact", "about", "team", "leadership", "staff")):
+            links.append(candidate)
+    return sorted(emails), list(phones.values()), links
+
+
 def research(candidate, provider, pages_per_site=3, *, checkpoint_store=None, checkpoint_prefix=""):
     website = candidate["website"]
-    parser = BusinessContactsSpider(urls=website, pages_per_site=pages_per_site)
     host = urlsplit(website).hostname
     root = "https://"+host
     robots = RobotFileParser()
@@ -69,7 +99,6 @@ def research(candidate, provider, pages_per_site=3, *, checkpoint_store=None, ch
             types = node.get("@type",[]); types = [types] if isinstance(types,str) else types
             if not isinstance(types,list): continue
             if "Person" in types:
-                from aibuds_crawler.spiders.business_contacts import published_email
                 email = published_email(str(node.get("email","")).removeprefix("mailto:"))
                 if isinstance(node.get("name"),str) and relevant_role(node.get("jobTitle", "")):
                     person = {"name":node["name"],"role":node["jobTitle"],"email":email,"source_url":url,"source_urls":[url],"retrieved_at":now()}
@@ -84,15 +113,23 @@ def research(candidate, provider, pages_per_site=3, *, checkpoint_store=None, ch
                 number = node.get("numberOfEmployees")
                 if isinstance(number,dict): number = number.get("value")
                 if isinstance(number,int) and not isinstance(number,bool): row["employee_count"] = number
-        response = HtmlResponse(url, request=scrapy.Request(url,meta={"business_host":host}),body=html.encode(),encoding="utf-8")
-        for extracted in parser.parse(response):
-            if isinstance(extracted,scrapy.Request):
-                if extracted.url not in queue: queue.append(extracted.url)
-            else:
-                for field,key in (("emails","email"),("phones","phone")):
-                    existing = {v[key] for v in row[field]}
-                    row[field].extend(v for v in extracted[field] if v[key] not in existing)
         for tag in soup(["script","style","noscript"]): tag.decompose()
+        emails, phones, links = extract_contacts_and_links(soup, url)
+        existing_emails = {v["email"] for v in row["emails"]}
+        for email in emails:
+            if email in existing_emails:
+                continue
+            row["emails"].append({"email": email, "source_url": url, "source_urls": [url]})
+            existing_emails.add(email)
+        existing_phones = {v["phone"] for v in row["phones"]}
+        for phone in phones:
+            if phone in existing_phones:
+                continue
+            row["phones"].append({"phone": phone, "source_url": url})
+            existing_phones.add(phone)
+        for link in links:
+            if urlsplit(link).hostname == host and link not in visited and link not in queue and len(visited) + len(queue) < pages_per_site + 2:
+                queue.append(link)
         text = soup.get_text(" ",strip=True)[:100000]
         row["_pages"].append({"url":url,"text":text})
         row["research_documents"].append({"source_url":url,"text":text,"kind":"business_website","retrieved_at":now()})
