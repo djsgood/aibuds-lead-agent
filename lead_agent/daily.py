@@ -17,7 +17,13 @@ def cell(value):
     return "'" + text if text.startswith(('=', '+', '-', '@', '\t', '\r')) else text
 
 
-def target_area_evidence(record):
+def target_area_evidence(record, locations=None):
+    if locations is not None:
+        for location in dict.fromkeys(locations):
+            evidence = target_area_evidence({**record, 'target_location': location})
+            if evidence:
+                return evidence
+        return None
     city, separator, state = str(record.get('target_location', '')).rpartition(',')
     city, state = city.strip(), state.strip().upper()
     states = {'WV':'West Virginia', 'OH':'Ohio', 'PA':'Pennsylvania'}
@@ -31,20 +37,20 @@ def target_area_evidence(record):
         text = str(document.get('text', ''))
         match = pattern.search(text)
         if match:
-            return {'source_url': document['source_url'],
+            return {'source_url': document['source_url'], 'target_location': record['target_location'],
                     'quote': text[max(0, match.start()-50):match.end()+70],
                     'classification':'website_mentions_target_area; headquarters not independently verified'}
     return None
 
 
-def export_daily(store, directory, day, target, result):
+def export_daily(store, directory, day, target, result, locations=None):
     records = []
     start = datetime.fromisoformat(day).replace(tzinfo=timezone.utc)
     end = start + timedelta(days=1)
     for row in store.db.execute('SELECT payload FROM companies WHERE updated_at >= ? AND updated_at < ? ORDER BY updated_at',
                                 (start.isoformat(), end.isoformat())):
         record = json.loads(row['payload'])
-        area = target_area_evidence(record)
+        area = target_area_evidence(record, locations)
         if record.get('source_urls') and record.get('industry_match') and area:
             records.append({**record, 'target_area_evidence': area})
     records = records[:target]
@@ -62,7 +68,7 @@ def export_daily(store, directory, day, target, result):
             writer.writerow({k: cell(v) for k, v in {
                 'lead_id': record['lead_id'], 'business_name': record.get('business_name'),
                 'website': record['website'], 'industry': record.get('target_industry'),
-                'target_location': record.get('target_location'),
+                'target_location': record['target_area_evidence']['target_location'],
                 'published_emails': '; '.join(c['email'] for c in record.get('emails', [])),
                 'evidence_urls': '; '.join(record['source_urls']),
                 'location_evidence_url': record['target_area_evidence']['source_url'],
@@ -99,7 +105,7 @@ def execute(config, store, provider, reports, day=None):
         if previous:
             return {**previous, 'already_ran_today': True}
         result = run(config, store, provider)  # No Hunter/model/Sheets/campaign integration.
-        summary = export_daily(store, reports, day, config.get('daily_target', config['max_businesses']), result)
+        summary = export_daily(store, reports, day, config.get('daily_target', config['max_businesses']), result, locations=config.get('locations'))
         if result.get('status') not in ('another_run_active', 'discovery_failed', 'failed'):
             store.checkpoint(checkpoint, summary)
         return summary
