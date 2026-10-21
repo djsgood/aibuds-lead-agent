@@ -192,3 +192,23 @@ Daily list location evidence is a sourced website mention of the target city and
 state, not independent headquarters verification. The CSV includes its quote and
 source URL. Records without this evidence are excluded, even if search returned
 them. Reports include UTC-day API attempt and estimated-cost totals.
+
+## Working HTML discovery route
+
+The daily worker uses ZYTE_SEARCH_MODE=html by default: POST /v1/extract fetches a
+public Google results page; deterministic parsing extracts organic heading links
+and published local-business website links. The separate /v1/search route remains
+available via search mode api, but returned 520 /download/temporary-error in live
+tests. One live /extract search-page request succeeded and returned relevant
+Wheeling WV roofing businesses. This does not require Apollo or another plan.
+
+HTML discovery filters directories, groups duplicate domains, preserves the
+Google source URL and never converts search titles into verified business names.
+Consent/challenge pages and unknown HTML fail clearly. It does not unlock hidden
+Apollo/LinkedIn fields. Actual business research and location evidence still come
+from the business website before daily-list inclusion.
+
+Search results and the next-page cursor are atomically checkpointed per query.
+Retries on the same UTC date reuse the cached response, and subsequent dates
+advance by ten results, cycling after ten pages or resetting after a genuine
+empty result. Each HTTP attempt still counts toward the persistent Zyte budget.
