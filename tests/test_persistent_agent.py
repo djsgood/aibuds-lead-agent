@@ -184,3 +184,28 @@ def test_missing_verifier_rejects_instead_of_qualifying(db):
     result=run({"industries":["roofing"],"locations":["New Martinsville, WV"]},db,FakeZyte())
     assert result["qualified"]==0 and result["rejected"]==1
     assert db.metrics()["outbox"]=={}
+
+
+def test_zyte_520_is_retried_with_each_attempt_budgeted(db):
+    session = Mock()
+    failed = Mock(status_code=520, content=b'{}')
+    success = Mock(status_code=200, content=b'{}')
+    success.json.return_value = {'status':'success','organicResults':[]}
+    session.request.side_effect = [failed, success]
+    provider = Zyte('fixture-key',db,{'max_calls':2,'max_cost':1,'estimated_cost':0.03},session)
+    with patch('lead_agent.providers.time.sleep'):
+        assert provider.search('roofing')['results'] == []
+    assert session.request.call_count == 2
+    assert db.metrics()['budgets'][0]['calls'] == 2
+
+
+def test_provider_error_category_does_not_expose_response_body(db):
+    session = Mock()
+    response = Mock(status_code=400, content=b'{}')
+    response.json.return_value = {'type':'/request/domain-not-supported', 'detail':'private-upstream-value'}
+    session.request.return_value = response
+    provider = Zyte('fixture-key',db,{'max_calls':2,'max_cost':1,'estimated_cost':0.03},session)
+    with pytest.raises(ProviderFailure) as error:
+        provider.search('roofing')
+    assert '/request/domain-not-supported' in str(error.value)
+    assert 'private-upstream-value' not in str(error.value)

@@ -1,5 +1,6 @@
 """Small provider adapters. No guessed contact facts or unbudgeted retries."""
 import base64
+import re
 import time
 import requests
 from typing import Protocol
@@ -37,7 +38,7 @@ class HTTPProvider:
                     time.sleep(1)
                     continue
                 raise ProviderFailure(self.name + " network failure") from None
-            if response.status_code in (429, 500, 502, 503, 504) and attempt == 0:
+            if response.status_code in (429, 500, 502, 503, 504, 520, 521, 522, 524) and attempt == 0:
                 time.sleep(2)
                 continue
             if response.status_code == 451:
@@ -45,7 +46,14 @@ class HTTPProvider:
             if response.status_code == 202:
                 return {"pending": True}
             if response.status_code != 200:
-                raise ProviderFailure(f"{self.name} HTTP {response.status_code}")
+                category = ""
+                try:
+                    detail = response.json().get("type", "")
+                    if isinstance(detail, str) and re.fullmatch(r"/(?:download|request|auth|limits)/[a-z0-9_-]{1,80}", detail):
+                        category = " " + detail
+                except (ValueError, AttributeError, TypeError):
+                    pass
+                raise ProviderFailure(f"{self.name} HTTP {response.status_code}{category}")
             if len(response.content) > 4_000_000:
                 raise ProviderFailure(self.name + " response exceeds limit")
             try:

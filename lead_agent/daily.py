@@ -95,7 +95,7 @@ def main():
             'max_calls': int(os.environ.get('LEAD_AGENT_MAX_DAILY_CALLS', '100')),
             'max_cost': float(os.environ.get('LEAD_AGENT_MAX_DAILY_COST_USD', '3')),
             'estimated_cost': float(os.environ.get('LEAD_AGENT_ESTIMATED_CALL_COST_USD', '0.03')),
-        })
+        }, search_domain=os.environ.get('ZYTE_SEARCH_DOMAIN', 'google.com'))
         result = execute(config, store, provider, path.parent / 'reports')
         print(json.dumps(result), flush=True)
         return 1 if result['status'] in ('failed', 'discovery_failed', 'completed_with_errors') else 0
