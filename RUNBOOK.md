@@ -153,3 +153,31 @@ service but exposes names only. It cannot transfer that key into this workspace.
 No key was read/exposed and no live paid call was made. Configure the key through
 secure environment settings or run this command locally where it is configured;
 never paste keys into chat or commit them.
+
+## Daily discovery worker
+
+Deploy only `aibuds-discovery-worker` using `Dockerfile.worker`, pinned to a reviewed
+commit. Its one-shot command is `python -m lead_agent.daily`; Railway cron is
+`0 13 * * *` (13:00 UTC daily), restart policy NEVER. Do not also run the older
+looping worker on this service. Set ENABLE_SCHEDULE=true only after validation.
+
+Use config/targets.daily.json: up to 25 new researched businesses, one website page
+plus robots per business, roofing/plumbing/HVAC in New Martinsville WV. The target
+is not a guaranteed count of verified contacts. Unknown identities stay blank;
+only sourced, industry-matching records appear in reports. Daily CSV and JSON
+summaries live in /data/reports/YYYY-MM-DD.csv and .json, alongside persistent
+/data/lead-agent.sqlite3. Reports never send emails or write campaign/Sheets data.
+Reports contain published contacts and should remain private. No public domain
+is needed. A date checkpoint prevents duplicate runs on the same UTC date.
+
+Budget settings: LEAD_AGENT_MAX_DAILY_COST_USD=3,
+LEAD_AGENT_MAX_DAILY_CALLS=100, LEAD_AGENT_ESTIMATED_CALL_COST_USD=0.03.
+Each retry reserves another attempt. These are estimated accounting limits, not a
+provider-side invoice guarantee; search request weight varies with maxResults.
+Use Zyte account spending controls for a hard billing ceiling. Railway usage and
+storage are separate. Keep the daily worker's key as a Railway variable reference
+`${{aibudbots-zyte-mcp.ZYTE_API_KEY}}`; do not copy secret values into files.
+
+Rollback: disable this worker's cron and set ENABLE_SCHEDULE=false, preserving its
+volume. Re-pin its previous reviewed commit if needed. Never change the outreach
+service or its volume. Do not delete the SQLite database to retry a job.
