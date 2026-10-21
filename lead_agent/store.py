@@ -38,6 +38,7 @@ class Store:
         CREATE TABLE IF NOT EXISTS budgets(day TEXT NOT NULL, provider TEXT NOT NULL, calls INTEGER NOT NULL, estimated_cost REAL NOT NULL, PRIMARY KEY(day,provider));
         CREATE TABLE IF NOT EXISTS checkpoints(source_key TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS outbox(company_id TEXT PRIMARY KEY REFERENCES companies(id), status TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS company_versions(company_id TEXT NOT NULL REFERENCES companies(id), version INTEGER NOT NULL, payload TEXT NOT NULL, stage TEXT NOT NULL, saved_at TEXT NOT NULL, PRIMARY KEY(company_id,version));
         CREATE TABLE IF NOT EXISTS leases(name TEXT PRIMARY KEY, owner TEXT NOT NULL, expires REAL NOT NULL);
         ''')
 
@@ -100,21 +101,54 @@ class Store:
             return True
         return any(self.db.execute("SELECT 1 FROM contacts WHERE email=?", (email_key(e),)).fetchone() for e in emails)
 
-    def save_company(self, record, stage="researched"):
+    def refresh_version(self, website, before):
+        """Return the prior generation eligible for explicit rejected-only refresh."""
+        if not before or self.blocked(website):
+            return None
+        row = self.db.execute("SELECT * FROM companies WHERE domain=?", (domain_key(website),)).fetchone()
+        if not row or row["stage"] != "rejected":
+            return None
+        if self.db.execute("SELECT 1 FROM outbox WHERE company_id=?", (row["id"],)).fetchone():
+            return None
+        record = json.loads(row["payload"])
+        if record.get("outreach_approved") or record.get("review_status") not in (None, "pending_review"):
+            return None
+        if self.blocked(website, [e["email"] for e in record.get("emails", [])]):
+            return None
+        cutoff = datetime.fromisoformat(before)
+        if cutoff.tzinfo is None or cutoff > datetime.now(timezone.utc):
+            raise ValueError("Refresh cutoff must be timezone-aware and not in the future")
+        if datetime.fromisoformat(row["updated_at"]) >= cutoff:
+            return None
+        return row["updated_at"]
+
+    def save_company(self, record, stage="researched", *, refresh_before=None, expected_version=None):
         id_, domain = lead_id(record["website"]), domain_key(record["website"])
         emails = [e["email"] for e in record.get("emails", [])]
         if self.blocked(record["website"], emails):
             return "suppressed"
         with self.transaction():
-            if any(self.db.execute("SELECT 1 FROM contacts WHERE email=?", (email_key(e),)).fetchone() for e in emails):
+            if self.blocked(record["website"], emails):
+                return "suppressed"
+            if any(self.db.execute("SELECT 1 FROM contacts WHERE email=? AND company_id!=?", (email_key(e),id_)).fetchone() for e in emails):
                 return "duplicate"
-            prior = self.db.execute("SELECT stage FROM companies WHERE id=?", (id_,)).fetchone()
+            prior = self.db.execute("SELECT * FROM companies WHERE id=?", (id_,)).fetchone()
             if prior:
-                return "duplicate"
-            self.db.execute("INSERT INTO companies VALUES (?,?,?,?,?)", (id_,domain,json.dumps(record),stage,now()))
+                generation = self.refresh_version(record["website"], refresh_before)
+                if not generation or generation != expected_version:
+                    return "duplicate"
+                # Snapshot the old active version before replacing it. Contacts/evidence
+                # remain in its immutable payload; suppressions are never deleted.
+                self.db.execute("INSERT OR IGNORE INTO company_versions VALUES (?,?,?,?,?)", (id_,1,prior["payload"],prior["stage"],prior["updated_at"]))
+                record = {**record, "outreach_approved":False, "review_status":"pending_review"}
+                self.db.execute("UPDATE companies SET payload=?,stage=?,updated_at=? WHERE id=?", (json.dumps(record),stage,now(),id_))
+            else:
+                self.db.execute("INSERT INTO companies VALUES (?,?,?,?,?)", (id_,domain,json.dumps(record),stage,now()))
+            version = self.db.execute("SELECT COALESCE(MAX(version),0)+1 FROM company_versions WHERE company_id=?", (id_,)).fetchone()[0]
+            self.db.execute("INSERT INTO company_versions VALUES (?,?,?,?,?)", (id_,version,json.dumps(record),stage,now()))
             for contact in record.get("emails", []):
                 # A duplicate contact never gets reassigned to another company silently.
-                self.db.execute("INSERT OR IGNORE INTO contacts VALUES (?,?,?,?)", (email_key(contact["email"]),id_,json.dumps(contact),now()))
+                self.db.execute("INSERT INTO contacts VALUES (?,?,?,?) ON CONFLICT(email) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at WHERE contacts.company_id=excluded.company_id", (email_key(contact["email"]),id_,json.dumps(contact),now()))
             for ev in record.get("fit_evidence", []):
                 self.db.execute("INSERT OR IGNORE INTO evidence(company_id,source_url,quote,kind,retrieved_at) VALUES (?,?,?,?,?)", (id_,ev["source_url"],ev.get("quote", ""),ev.get("kind", "observed_fact"),now()))
             if stage == "qualified":
@@ -130,6 +164,7 @@ class Store:
 
     def metrics(self):
         return {"companies": self.db.execute("SELECT count(*) FROM companies").fetchone()[0],
+                "research_versions": self.db.execute("SELECT count(*) FROM company_versions").fetchone()[0],
                 "contacts": self.db.execute("SELECT count(*) FROM contacts").fetchone()[0],
                 "suppressions": self.db.execute("SELECT count(*) FROM suppressions").fetchone()[0],
                 "stages": dict(self.db.execute("SELECT stage,count(*) FROM companies GROUP BY stage")),

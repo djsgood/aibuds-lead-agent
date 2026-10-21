@@ -1,6 +1,7 @@
 """Research facts and hypotheses; strict sales qualification is separate."""
 import json
 import re
+from datetime import datetime, timezone, timedelta
 from urllib.parse import urlsplit, urljoin
 from urllib.robotparser import RobotFileParser
 from bs4 import BeautifulSoup
@@ -107,6 +108,26 @@ def research(candidate, provider, pages_per_site=3):
     return row
 
 
+def fresh_verification(contact, at=None):
+    """A saved status alone is insufficient at qualification or export time."""
+    if contact.get("verification_status") != "independently_verified" or not contact.get("verification_method"):
+        return False
+    at = at or datetime.now(timezone.utc)
+    for field in ("checked_at", "provider_verified_at"):
+        try:
+            value = datetime.fromisoformat(contact[field])
+            # Provider APIs may supply a date; interpret that explicit date as UTC.
+            if value.tzinfo is None:
+                if field != "provider_verified_at" or len(contact[field]) != 10:
+                    return False
+                value = value.replace(tzinfo=timezone.utc)
+            if not timedelta(0) <= at - value <= timedelta(days=30):
+                return False
+        except (KeyError, ValueError, TypeError):
+            return False
+    return True
+
+
 def strict_qualification(record, employee_min=5, employee_max=50):
     reasons=[]
     country = str(record.get("country") or "").lower()
@@ -117,7 +138,7 @@ def strict_qualification(record, employee_min=5, employee_max=50):
     if not record.get("hypotheses"): reasons.append("no_evidenced_automation_workflow")
     contacts=[e for e in record.get("emails",[]) if e.get("name") and relevant_role(e.get("role"))
               and (e.get("source_urls") or [e.get("source_url")])[0]
-              and e.get("verification_status")=="independently_verified"
+              and fresh_verification(e)
               and e["email"].split("@")[0].lower() not in GENERIC]
     if not contacts: reasons.append("no_verified_relevant_decision_maker")
     headcount=record.get("employee_count")

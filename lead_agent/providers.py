@@ -104,7 +104,7 @@ class Hunter(HTTPProvider):
             verified_date=datetime.fromisoformat((row.get("verification") or {}).get("date", "")).replace(tzinfo=timezone.utc)
             fresh=0 <= (datetime.now(timezone.utc)-verified_date).days <= 30
         except (ValueError,TypeError): fresh=False
-        valid = fresh and row.get("status") == "valid" and row.get("smtp_check") is True and row.get("accept_all") is False and not row.get("disposable") and not row.get("block")
+        valid = fresh and row.get("status") == "valid" and row.get("smtp_check") is True and row.get("accept_all") is False and not row.get("disposable") and not row.get("webmail") and not row.get("block")
         return {"verification_status":"independently_verified" if valid else row.get("status", "unknown"),
                 "verification_method":"hunter_email_verifier","checked_at":now(),
                 "provider_verified_at":(row.get("verification") or {}).get("date"),

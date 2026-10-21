@@ -88,3 +88,65 @@ Set account-side spending caps as well. No provider subscriptions were purchased
 
 Do not point production Railway at this branch or enable ENABLE_SCHEDULE until
 controlled testing passes and the user explicitly authorizes deployment.
+
+## Session continuation — October 20, 2026
+
+Fetched `dev/autonomous-lead-pipeline` at `42e73a5` and preserved the earlier
+independent Phase 1 branch as `archive/session-phase1-discovery` (tip `622e647`).
+The branches share only the initial commit. This branch's runner is the primary
+implementation; the older OSM package and its local data remain preserved on the
+archive branch, rather than adding a second competing pipeline. No history was
+reset or force-pushed.
+
+Explicit refresh is now available via an optional target configuration field:
+`"refresh_rejected_before": "2026-10-01T00:00:00+00:00"`.
+It only refreshes previously rejected, unreviewed records older than that cutoff
+that reappear in bounded discovery. The cutoff must be timezone-aware and not
+in the future. Leave it absent to keep normal skip-known behavior. Refresh uses
+its own checkpoint generation, snapshots immutable prior/current payloads in
+`company_versions`, and uses an optimistic generation check inside the save
+transaction. Reviewed/approved/qualified/queued records and suppressions cannot
+be refreshed by this path. Historical contact identities remain reserved to
+prevent reassignment to another business. Prior evidence remains available in
+version payloads; the existing evidence table remains an append-only union.
+This does not yet refresh all database records independently of search results,
+or provide an approved re-review path for previously qualified records.
+
+Interrupted enrichment now checkpoints successful Hunter contact discovery and
+individual verification results per research generation. Restart reuses fresh
+verified results and permanently invalid results; expired verification is
+retried within existing budgets. A new explicit research generation may verify
+again. Provider failures/pending/unknown results are not treated as fresh proof.
+Page-by-page website recovery is still a remaining task.
+
+Qualification and review staging now require verification method, checked time,
+and provider verification date no older than 30 days and not in the future.
+Staging rechecks qualification without changing saved evidence and reports
+`verification_or_qualification_blocked` for stale/incomplete records. Such rows
+remain pending, and the staging CLI returns failure. Hunter webmail responses
+cannot earn independent verification. No new live handoff or send path exists.
+
+Checks: baseline 41 pytest tests + 14 subtests and four MCP tests passed after
+installing this branch's existing requirements in the repository-local venv.
+Updated suite: 65 tests + 14 subtests passed. Both real-engine offline fixtures
+and all four MCP unit tests passed. No paid provider calls, live Sheets writes,
+scheduling, deployment, or campaign operations were performed. GitHub Actions
+and live provider data quality were not validated in this session.
+
+Rollback: these changes are development-only. Revert the continuation commit
+on this branch to restore the previous code; never reset production services.
+The additive company_versions table can remain when rolling code back. Do not
+remove it or restore an old database over newer evidence. Back up SQLite using
+its backup API before any future approved migration/deployment. No existing
+session database was opened or migrated to test this change; all tests used
+synthetic temporary databases.
+
+OAuth investigation (read-only, separate MCP service only): Railway service
+293086b8-ddfb-457a-b892-7d8b79d2d98b is live on feat/zyte-mcp with one replica
+and no volume. Logs show an old token rejected for a missing JTI mapping, then
+multiple GitHub callbacks (302) followed by ChatGPT token exchanges (200).
+This does not prove the final ChatGPT connection was recorded. User reports
+"missing OAuth callback data"; exact failing page is still needed. A separate
+startup diagnostic reports Scrapy Cloud jobq HTTP 403. No credentials were
+read or changed and no service was restarted/redeployed. Do not conflate that
+upstream authorization issue with the final OAuth connection error.

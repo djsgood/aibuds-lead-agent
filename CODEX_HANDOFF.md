@@ -59,3 +59,22 @@ python -m lead_agent run --config config/targets.example.json --dry-run
 ```
 
 Final success means autonomous discovery, supported research, relevant real decision makers, correctly classified verified contacts, persistent deduplication including opt-outs, explainable qualification, approved Sheets handoff, reliable scheduling/recovery, and measurable data quality. Error-free startup alone is insufficient. Report what was actually tested, what remains blocked, and the exact evidence for readiness. Keep the user updated while actively working; never imply work continues after ending a turn.
+
+## Continuation update — October 20, 2026
+
+Read DEVELOPMENT.md's session continuation before continuing. Explicit rejected-only
+versioned refresh, generation-scoped enrichment/verification checkpoints, and
+verification expiry gates at qualification and staging have now been implemented.
+65 tests and 14 subtests pass; four MCP tests and both offline crawler fixtures
+also pass. No production changes or paid provider requests occurred.
+
+Prior session OSM implementation is preserved on local
+archive/session-phase1-discovery, tip 622e647; do not reset or blindly merge the
+competing package into this runner. Remaining refresh work includes page-level
+recovery, records absent from current discovery results, and an explicit reviewed
+record re-review path. Authoritative campaign suppression sync is still unresolved.
+
+User reports OAuth reconnect error. Read-only Railway logs show callback redirects
+and successful /token exchanges, but no confirmed final ChatGPT connection; exact
+error page remains to be identified. Separate Scrapy Cloud startup probe returns
+403. Do not redeploy/restart services or change credentials without approval.

@@ -3,6 +3,7 @@ import json
 from urllib.parse import quote
 from aibuds_crawler.sheets import ReviewSheet
 from lead_agent.store import now
+from lead_agent.research import strict_qualification
 
 LIVE_HEADERS=["Date Added","Company","Industry","Location","Website","Decision Maker","Role","Email","Phone","Why AIBudBots Fits","Evidence / Notes","Qualification Status","Outreach Status","Last Contact / Next Step"]
 
@@ -33,14 +34,21 @@ def stage(store, session, spreadsheet_id, tab="Lead Review"):
     sync_existing(store,session,spreadsheet_id)  # Read-only sync immediately before staging.
     sink=ReviewSheet(spreadsheet_id,tab,session)
     sink.prepare()
-    counts={"staged":0,"suppressed":0,"uncertain":0}
+    counts={"staged":0,"suppressed":0,"uncertain":0,"verification_or_qualification_blocked":0}
     for row in store.db.execute("SELECT c.id,c.payload FROM companies c JOIN outbox o ON o.company_id=c.id WHERE o.status='pending_review'").fetchall():
         record=json.loads(row["payload"])
         if store.blocked(record["website"],[e["email"] for e in record.get("emails",[])]):
             store.db.execute("UPDATE outbox SET status='suppressed',updated_at=? WHERE company_id=?",(now(),row["id"]))
             counts["suppressed"]+=1; continue
+        # Re-evaluate saved evidence and verification freshness immediately before
+        # export. Do not overwrite the saved/reviewed payload when a gate expires.
+        from copy import deepcopy
+        validated = strict_qualification(deepcopy(record))
+        if validated["qualification"] != "qualified":
+            counts["verification_or_qualification_blocked"]+=1
+            continue
         try:
-            status=sink.save(record)
+            status=sink.save(validated)
         except Exception:
             # A subsequent run re-reads remote IDs before deciding whether to append.
             counts["uncertain"]+=1

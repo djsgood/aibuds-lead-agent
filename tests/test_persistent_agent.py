@@ -24,7 +24,7 @@ def record():
             "business_name_source_url":"https://roofbusiness.com/about","country":"US","employee_count":10,
             "industry_match":True,"target_industry":"roofing","target_location":"New Martinsville, WV",
             "hypotheses":[{"summary":"Follow-up may help","evidence":{"source_url":"https://roofbusiness.com/","quote":"Request a quote"}}],
-            "emails":[{"email":"alex@roofbusiness.com","name":"Alex Owner","role":"Owner","source_url":"https://roofbusiness.com/about","source_urls":["https://roofbusiness.com/about"],"verification_status":"independently_verified"}],
+            "emails":[{"email":"alex@roofbusiness.com","name":"Alex Owner","role":"Owner","source_url":"https://roofbusiness.com/about","source_urls":["https://roofbusiness.com/about"],"verification_status":"independently_verified","verification_method":"fixture_only","checked_at":datetime.now(timezone.utc).isoformat(),"provider_verified_at":datetime.now(timezone.utc).date().isoformat()}],
             "phones":[],"source_urls":["https://roofbusiness.com/"],"fit_evidence":[{"source_url":"https://roofbusiness.com/","quote":"Request a quote"}],"discovery_source_url":"https://google.com/search?q=roofing","collected_at":"2026-10-21T00:00:00+00:00","email_status":"published_not_deliverability_verified","collection_errors":[]}
 
 
@@ -162,7 +162,7 @@ class FakeZyte:
 
 class FakeHunter:
     def contacts(self,domain): return []
-    def verify(self,email): return {"verification_status":"independently_verified","verification_method":"fixture_only","checked_at":"2026-10-21"}
+    def verify(self,email): return {"verification_status":"independently_verified","verification_method":"fixture_only","checked_at":datetime.now(timezone.utc).isoformat(),"provider_verified_at":datetime.now(timezone.utc).date().isoformat()}
 
 
 def test_full_persistent_run_restart_and_staging(db):
