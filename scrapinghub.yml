@@ -1,5 +1,0 @@
-projects:
-  default: 882321
-  pipeline: 882346
-requirements:
-  file: requirements-crawler.txt

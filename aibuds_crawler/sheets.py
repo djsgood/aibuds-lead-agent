@@ -86,10 +86,10 @@ class ReviewSheetsPipeline:
         try:
             item["sheet_status"] = self.sink.save(item)
         except Exception:
-            # Retain the lead in Cloud Items instead of losing it on a write failure.
+            # Retain the lead in the crawler output instead of losing it on a write failure.
             item["sheet_status"] = "write_failed_or_uncertain"
             spider.crawler.stats.inc_value("lead_pipeline/sheet_errors")
-            spider.logger.error("Sheet write failed or is uncertain; lead retained in Items: %s. Do not retry append blindly.", item["lead_id"])
+            spider.logger.error("Sheet write failed or is uncertain; lead retained in crawler output: %s. Do not retry append blindly.", item["lead_id"])
         return item
 
     def close_spider(self, spider):

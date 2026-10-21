@@ -8,8 +8,7 @@ mutation, or outreach-repository mutation is authorized by this implementation.
 ## Phase 0 inspection
 
 The original business_contacts spider is a working URL-to-contact component.
-It is not a complete lead generator. Existing MCP tools collected one page and
-listed Cloud spiders. The development lead_pipeline prototype adds discovery and
+It is not a complete lead generator. The MCP bridge collects one explicit page. The development lead_pipeline prototype adds discovery and
 research but its original score was not sufficient to qualify a sales lead.
 
 Read-only inspection of djsgood/aibuds/main confirmed its lead_pipeline.py uses an
@@ -34,8 +33,8 @@ without a future explicitly authorized, idempotent approval handoff.
 One Python application: provider adapters -> evidence/research -> contacts and
 verification -> explicit qualification -> SQLite -> review-only Sheets outbox.
 Scrapy remains an extraction engine, not a separate microservice requirement.
-Railway worker uses a persistent /data volume for SQLite. Cloud jobs are useful
-for crawling but their ephemeral filesystem must not be the only state store.
+The prepared Railway worker uses a persistent /data volume for SQLite. Local
+crawlers emit review records; transient crawl output is not a persistent job store.
 
 No Firecrawl runtime dependency. Discovery uses a bounded Zyte Search adapter.
 The source adapter contract also permits directory, Google Places, and licensed
