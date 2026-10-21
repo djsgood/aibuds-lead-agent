@@ -70,3 +70,24 @@ def test_provider_failure_can_resume_after_configuration_repair(tmp_path):
         execute({'max_businesses':25}, store, Mock(), tmp_path, day='2026-10-21')
         run.assert_called_once()
     store.close()
+
+
+def test_railway_worker_uses_its_own_image_without_web_healthcheck():
+    from pathlib import Path
+    config = json.loads((Path(__file__).resolve().parents[1]/'railway.worker.json').read_text())
+    assert config['build']['dockerfilePath'] == 'Dockerfile.worker'
+    assert config['deploy']['startCommand'] == 'python -m lead_agent.daily'
+    assert config['deploy']['restartPolicyType'] == 'NEVER'
+    assert 'healthcheckPath' not in config['deploy']
+
+
+def test_daily_rechecks_completion_after_claim(tmp_path):
+    store = Store(':memory:')
+    original = store.claim
+    def claim(*args, **kwargs):
+        store.checkpoint('daily:2026-10-21', {'status':'completed'})
+        return original(*args, **kwargs)
+    with patch.object(store, 'claim', side_effect=claim), patch('lead_agent.daily.run') as run:
+        assert execute({'max_businesses':25},store,Mock(),tmp_path,day='2026-10-21')['already_ran_today']
+        run.assert_not_called()
+    store.close()

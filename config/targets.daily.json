@@ -5,7 +5,12 @@
     "HVAC"
   ],
   "locations": [
-    "New Martinsville, WV"
+    "New Martinsville, WV",
+    "Wheeling, WV",
+    "Parkersburg, WV",
+    "Marietta, OH",
+    "Steubenville, OH",
+    "Washington, PA"
   ],
   "max_businesses": 25,
   "pages_per_site": 1,

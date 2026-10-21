@@ -157,12 +157,17 @@ never paste keys into chat or commit them.
 ## Daily discovery worker
 
 Deploy only `aibuds-discovery-worker` using `Dockerfile.worker`, pinned to a reviewed
-commit. Its one-shot command is `python -m lead_agent.daily`; Railway cron is
+commit on the dedicated `deploy/discovery-worker` branch. That release branch
+copies `railway.worker.json` to root `railway.json`, because the current Railway API
+rejects custom config paths. Never merge the worker root config into the MCP
+development branch. The MCP keeps its existing branch and pinned commit.
+Its one-shot command is `python -m lead_agent.daily`; Railway cron is
 `0 13 * * *` (13:00 UTC daily), restart policy NEVER. Do not also run the older
 looping worker on this service. Set ENABLE_SCHEDULE=true only after validation.
 
 Use config/targets.daily.json: up to 25 new researched businesses, one website page
-plus robots per business, roofing/plumbing/HVAC in New Martinsville WV. The target
+plus robots per business, roofing/plumbing/HVAC in New Martinsville, Wheeling and Parkersburg WV; Marietta and Steubenville OH;
+and Washington PA, as approved by the owner. The target
 is not a guaranteed count of verified contacts. Unknown identities stay blank;
 only sourced, industry-matching records appear in reports. Daily CSV and JSON
 summaries live in /data/reports/YYYY-MM-DD.csv and .json, alongside persistent

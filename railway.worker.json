@@ -1,0 +1,11 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile.worker"
+  },
+  "deploy": {
+    "startCommand": "python -m lead_agent.daily",
+    "restartPolicyType": "NEVER"
+  }
+}
