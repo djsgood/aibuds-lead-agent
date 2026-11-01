@@ -47,3 +47,22 @@ def test_local_model_accepts_only_attributed_hypotheses():
     result=OllamaInterpreter('local-model',session).interpret([{'source_url':'https://business.com/reviews'}])
     assert result[0]['kind']=='hypothesis'
     assert session.post.call_args.args[0]=='http://127.0.0.1:11434/api/generate'
+
+
+def test_openai_responses_model_accepts_only_attributed_hypotheses():
+    from unittest.mock import Mock
+    from lead_agent.models import OpenAIResponsesInterpreter
+    client=Mock(); client.responses.create.return_value.output_text='[{"summary":"Evaluate a follow-up workflow","source_url":"https://business.com/reviews"}]'
+    result=OpenAIResponsesInterpreter('gpt-5-mini',client).interpret([{'source_url':'https://business.com/reviews'}])
+    assert result[0]['kind']=='hypothesis'
+    call=client.responses.create.call_args.kwargs
+    assert call['model']=='gpt-5-mini'
+    assert call['text']['format']['type']=='json_schema'
+
+
+def test_openai_responses_model_rejects_contact_facts():
+    from unittest.mock import Mock
+    from lead_agent.models import OpenAIResponsesInterpreter
+    client=Mock(); client.responses.create.return_value.output_text='[{"summary":"Call Sam","source_url":"https://business.com/reviews","email":"invented@business.com"}]'
+    with pytest.raises(ValueError):
+        OpenAIResponsesInterpreter('gpt-5-mini',client).interpret([{'source_url':'https://business.com/reviews'}])

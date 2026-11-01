@@ -1,4 +1,2 @@
--r requirements-crawler.txt
 -r requirements-pipeline.txt
--r mcp/requirements.txt
 pytest>=8,<10

@@ -1,5 +1,2 @@
-include scrapy.cfg requirements-crawler.txt CRAWLER.md
-recursive-include tests *.py
-
 include requirements-direct.txt AUTONOMOUS_AGENT_REQUIREMENTS.md RUNBOOK.md ARCHITECTURE.md DEVELOPMENT.md CODEX_HANDOFF.md
 recursive-include config *.example.json

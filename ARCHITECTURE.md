@@ -7,11 +7,11 @@ mutation, or outreach-repository mutation is authorized by this implementation.
 
 ## Phase 0 inspection
 
-The original business_contacts spider is a working URL-to-contact component.
-It is not a complete lead generator. The MCP bridge collects one explicit page. The development lead_pipeline prototype adds discovery and
+The original business\_contacts spider is a working URL-to-contact component.
+It is not a complete lead generator. The MCP bridge collects one explicit page. The development lead\_pipeline prototype adds discovery and
 research but its original score was not sufficient to qualify a sales lead.
 
-Read-only inspection of djsgood/aibuds/main confirmed its lead_pipeline.py uses an
+Read-only inspection of djsgood/aibuds/main confirmed its lead\_pipeline.py uses an
 external Apps Script endpoint with multiple attempted import actions. The external
 Apps Script source and current campaign-state suppression feed are not in this
 repository. We will not call those import actions or assume their behavior.
@@ -32,16 +32,15 @@ without a future explicitly authorized, idempotent approval handoff.
 
 One Python application: provider adapters -> evidence/research -> contacts and
 verification -> explicit qualification -> SQLite -> review-only Sheets outbox.
-Scrapy remains an extraction engine, not a separate microservice requirement.
+
 The prepared Railway worker uses a persistent /data volume for SQLite. Local
 crawlers emit review records; transient crawl output is not a persistent job store.
 
-No Firecrawl runtime dependency. Discovery uses a bounded Zyte Search adapter.
+Firecrawl runtime dependency.
 The source adapter contract also permits directory, Google Places, and licensed
 enrichment providers. An unavailable provider must report unavailable, not return
-invented or silently "verified" contacts. Do not use intrusive scans or access
+invented or silently "verified" contacts. permission to use intrusive scans or access
 controls bypasses to obtain contact data.
-
 Research stores source URLs, quotes, retrieval timestamps, and fact/hypothesis/
 unknown labels. A request-a-quote form is an observed workflow signal, not proof
 that the business misses leads. 5–50 US employees is a configurable preference;

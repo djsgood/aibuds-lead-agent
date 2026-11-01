@@ -139,6 +139,18 @@ def fresh_verification(contact, at=None):
     return True
 
 
+def verified_decision_maker_contacts(record):
+    return [contact for contact in record.get("emails", [])
+            if contact.get("name") and relevant_role(contact.get("role"))
+            and (contact.get("source_urls") or [contact.get("source_url")])[0]
+            and contact.get("email", "").lower() not in record.get("excluded_emails", [])
+            and (not record.get("decision_maker_roles") or any(
+                role.lower() in str(contact.get("role", "")).lower()
+                for role in record["decision_maker_roles"]))
+            and fresh_verification(contact)
+            and contact["email"].split("@", 1)[0].lower() not in GENERIC]
+
+
 def strict_qualification(record, employee_min=5, employee_max=50):
     reasons=[]
     country = str(record.get("country") or "").lower()
@@ -147,12 +159,7 @@ def strict_qualification(record, employee_min=5, employee_max=50):
     if country not in ("us","usa","united states","united states of america"): reasons.append("us_location_unconfirmed")
     if not record.get("industry_match"): reasons.append("industry_fit_unconfirmed")
     if not record.get("hypotheses"): reasons.append("no_evidenced_automation_workflow")
-    contacts=[e for e in record.get("emails",[]) if e.get("name") and relevant_role(e.get("role"))
-              and (e.get("source_urls") or [e.get("source_url")])[0]
-              and e.get("email", "").lower() not in record.get("excluded_emails", [])
-              and (not record.get("decision_maker_roles") or any(role.lower() in str(e.get("role", "")).lower() for role in record["decision_maker_roles"]))
-              and fresh_verification(e)
-              and e["email"].split("@")[0].lower() not in GENERIC]
+    contacts=verified_decision_maker_contacts(record)
     if not contacts: reasons.append("no_verified_relevant_decision_maker")
     headcount=record.get("employee_count")
     size_fit = isinstance(headcount,int) and employee_min <= headcount <= employee_max

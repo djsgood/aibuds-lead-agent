@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from lead_agent.pipeline_utils import parse_list, business_url, domain_key, lead_id
 from lead_agent.store import Store, BudgetExceeded, now
-from lead_agent.providers import Zyte, Hunter, ProviderFailure
+from lead_agent.providers import DiscoveryResearchProvider, Hunter, ProviderFailure
 from lead_agent.research import research, strict_qualification, relevant_role, fresh_verification
 
 
@@ -34,7 +34,7 @@ def validate_config(config):
     return config
 
 
-def candidates(config, zyte, store):
+def candidates(config, store, provider: DiscoveryResearchProvider):
     day=datetime.now(timezone.utc).date().isoformat()
     seen=set()
     excluded={domain_key("https://"+v.removeprefix("https://").removeprefix("http://")) for v in config.get("exclude_domains",[])}
@@ -44,7 +44,7 @@ def candidates(config, zyte, store):
             key="search:"+day+":"+query
             result=store.get_checkpoint(key)
             if result is None:
-                result=zyte.search(query)
+                result=provider.search(query)
                 store.checkpoint(key,result)
             for match in result["results"]:
                 if not isinstance(match, dict): continue
@@ -60,7 +60,7 @@ def candidates(config, zyte, store):
                        "discovered_at":result["retrieved_at"],"discovery_query":query}
 
 
-def run(config, store, zyte, hunter=None, interpreter=None):
+def run(config, store, provider: DiscoveryResearchProvider, hunter=None, interpreter=None):
     run_id=store.start_run(config)
     if not store.claim("worker",run_id):
         store.end_run(run_id,"another_run_active")
@@ -70,7 +70,7 @@ def run(config, store, zyte, hunter=None, interpreter=None):
     status="completed"
     failure_reason=None
     try:
-        for candidate in candidates(config,zyte,store):
+        for candidate in candidates(config,store,provider):
             if counts["researched"] >= config.get("max_businesses",10): break
             if time.monotonic()-started >= config.get("max_runtime_seconds",600):
                 status="runtime_budget_reached"; break
@@ -82,7 +82,7 @@ def run(config, store, zyte, hunter=None, interpreter=None):
                 store.job_stage(research_key,"research_pending")
                 record=store.get_checkpoint(research_key)
                 if record is None:
-                    record=research(candidate,zyte,config.get("pages_per_site",3),checkpoint_store=store,checkpoint_prefix=research_key)
+                    record=research(candidate,provider,config.get("pages_per_site",3),checkpoint_store=store,checkpoint_prefix=research_key)
                     store.checkpoint(research_key,record)
                 store.job_stage(research_key,"enrichment_pending")
                 if hunter:
@@ -200,13 +200,16 @@ def main(argv=None):
             store.suppress(args.kind,args.value,args.reason); result={"status":"suppressed"}
         else:
             budget={"max_calls":int(os.environ.get("LEAD_AGENT_MAX_DAILY_CALLS","60")),"max_cost":float(os.environ.get("LEAD_AGENT_MAX_DAILY_COST_USD","1")),"estimated_cost":float(os.environ.get("LEAD_AGENT_ESTIMATED_CALL_COST_USD","0.01"))}
-            zyte=Zyte(os.environ.get("ZYTE_API_KEY"),store,budget,search_domain=os.environ.get("ZYTE_SEARCH_DOMAIN","google.com"))
             hunter=Hunter(os.environ["HUNTER_API_KEY"],store,{"max_calls":int(os.environ.get("HUNTER_MAX_DAILY_CALLS","10")),"max_cost":float(os.environ.get("HUNTER_MAX_DAILY_COST_USD","1")),"estimated_cost":float(os.environ.get("HUNTER_ESTIMATED_CALL_COST_USD","0.05"))}) if os.environ.get("HUNTER_API_KEY") else None
             interpreter=None
-            if os.environ.get("OLLAMA_MODEL"):
+            model_backend=os.environ.get("LEAD_AGENT_MODEL_BACKEND", "").strip().lower()
+            if model_backend == "ollama":
                 from lead_agent.models import OllamaInterpreter
-                interpreter=OllamaInterpreter(os.environ["OLLAMA_MODEL"])
-            result=run(config,store,zyte,hunter,interpreter)
+                interpreter=OllamaInterpreter(os.environ.get("OLLAMA_MODEL", ""))
+            elif model_backend == "openai":
+                from lead_agent.models import OpenAIResponsesInterpreter
+                interpreter=OpenAIResponsesInterpreter(os.environ.get("OPENAI_MODEL", "gpt-5-mini"))
+            raise SystemExit("No discovery provider is configured; connect a replacement provider before using --execute.")
         print(json.dumps(result,indent=2))
         return 0 if result.get("status") not in ("failed","discovery_failed","completed_with_errors") and not result.get("uncertain") and not result.get("verification_or_qualification_blocked") else 1
     finally: store.close()

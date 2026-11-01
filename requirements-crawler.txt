@@ -1,7 +1,0 @@
-Scrapy>=2.19,<2.20
-# Packaging support for local source distributions.
-setuptools>=68
-google-auth>=2.40,<3
-requests>=2.32,<3
-
-beautifulsoup4>=4.12,<5

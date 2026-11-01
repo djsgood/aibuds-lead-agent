@@ -1,2 +1,0 @@
--r requirements-crawler.txt
-scrapy-zyte-api==0.36.0
