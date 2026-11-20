@@ -192,3 +192,51 @@ class Hunter(HTTPProvider):
                 "verification_method":"hunter_email_verifier","checked_at":now(),
                 "provider_verified_at":(row.get("verification") or {}).get("date"),
                 "verification_source_url":"https://hunter.io/api-documentation/v2#email-verifier"}
+
+
+class Firecrawl(HTTPProvider):
+    """Structured search and HTML extraction; bounded by existing call ledger."""
+    def __init__(self, key, store, budget, session=None):
+        super().__init__("firecrawl", "https://api.firecrawl.dev/v2/", key, store, budget, session)
+
+    def search(self, query):
+        payload = self.call("search", "POST", headers={"Authorization": "Bearer " + self.key},
+                            json={"query": query, "limit": 20, "sources": ["web"]})
+        data = payload.get("data")
+        rows = data.get("web") if isinstance(data, dict) else None
+        if payload.get("success") is not True or not isinstance(rows, list):
+            raise ProviderFailure("Firecrawl search schema mismatch")
+        return {"source_url": "https://www.google.com/search?" + __import__("urllib.parse", fromlist=["urlencode"]).urlencode({"q": query}),
+                "results": [{"url": r["url"], "title": r.get("title", "")}
+                            for r in rows if isinstance(r, dict) and isinstance(r.get("url"), str)],
+                "retrieved_at": now()}
+
+    def fetch(self, url):
+        from aibuds_crawler.guard import public_url
+        url = public_url(url)
+        # Robots policy must be retrieved as plain text, not rendered markdown.
+        if url.endswith("/robots.txt"):
+            self.store.reserve_call(self.name, **self.budget)
+            try:
+                response = self.session.get(url, timeout=20, allow_redirects=False,
+                                            headers={"User-Agent": "AIBudBotsContactCrawler"})
+            except requests.RequestException:
+                raise ProviderFailure("robots network failure") from None
+            if response.status_code != 200:
+                raise ProviderFailure(f"Website HTTP {response.status_code}")
+            if len(response.content) > 500000:
+                raise ProviderFailure("robots response exceeds limit")
+            return response.text
+        payload = self.call("scrape", "POST", headers={"Authorization": "Bearer " + self.key},
+                            json={"url": url, "formats": ["rawHtml"], "onlyMainContent": False})
+        data = payload.get("data")
+        if payload.get("success") is not True or not isinstance(data, dict):
+            raise ProviderFailure("Firecrawl scrape schema mismatch")
+        metadata = data.get("metadata") or {}
+        if metadata.get("statusCode") != 200 or not isinstance(data.get("rawHtml"), str):
+            raise ProviderFailure("Firecrawl HTML or HTTP status unavailable")
+        from urllib.parse import urlsplit
+        final = metadata.get("sourceURL") or metadata.get("url")
+        if not final or urlsplit(final).hostname != urlsplit(url).hostname:
+            raise ProviderFailure("Scrape final host not confirmed")
+        return data["rawHtml"]
