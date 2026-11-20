@@ -93,7 +93,7 @@ def export_daily(store, directory, day, target, result, locations=None):
     return summary
 
 
-def execute(config, store, provider, reports, day=None, *, hunter=None, sheet_stage=None):
+def execute(config, store, provider, reports, day=None, *, hunter=None, sheet_stage=None, interpreter=None):
     day = day or datetime.now(timezone.utc).date().isoformat()
     checkpoint = 'daily:' + day
     previous = store.get_checkpoint(checkpoint)
@@ -106,7 +106,7 @@ def execute(config, store, provider, reports, day=None, *, hunter=None, sheet_st
         previous = store.get_checkpoint(checkpoint)
         if previous:
             return {**previous, 'already_ran_today': True}
-        result = run(config, store, provider, hunter=hunter)
+        result = run(config, store, provider, hunter=hunter, **({'interpreter': interpreter} if interpreter is not None else {}))
         if sheet_stage is not None:
             result['sheet_delivery'] = sheet_stage()
             if result['sheet_delivery'].get('uncertain'):
@@ -137,7 +137,7 @@ def main():
         scopes=['https://www.googleapis.com/auth/spreadsheets'])
     os.umask(0o077)
     store = Store(path)
-    provider = hunter = None
+    provider = hunter = interpreter = None
     try:
         os.chmod(path, 0o600)
         provider = Firecrawl(os.environ['FIRECRAWL_API_KEY'], store, {
@@ -150,6 +150,9 @@ def main():
             'max_cost': float(os.environ.get('HUNTER_MAX_DAILY_COST_USD', '3')),
             'estimated_cost': float(os.environ.get('HUNTER_ESTIMATED_CALL_COST_USD', '0.06')),
         })
+        if os.environ.get('OPENAI_API_KEY'):
+            from lead_agent.models import OpenAIInterpreter
+            interpreter = OpenAIInterpreter(model=os.environ.get('OPENAI_MODEL', 'gpt-5-mini'))
         from lead_agent.handoff import sync_existing
         with AuthorizedSession(creds) as session:
             spreadsheet = os.environ['LEADS_SPREADSHEET_ID']
@@ -157,12 +160,12 @@ def main():
             if tab.strip().lower() != 'lead review':
                 raise SystemExit('Only Lead Review staging is permitted')
             sync_existing(store, session, spreadsheet)
-            result = execute(config, store, provider, path.parent / 'reports', hunter=hunter,
+            result = execute(config, store, provider, path.parent / 'reports', hunter=hunter, interpreter=interpreter,
                              sheet_stage=lambda: stage(store, session, spreadsheet, tab))
         print(json.dumps(result), flush=True)
         return 1 if result['status'] in ('failed', 'discovery_failed', 'completed_with_errors') else 0
     finally:
-        for client in (provider, hunter):
+        for client in (provider, hunter, interpreter):
             if client:
                 client.session.close()
         store.close()
