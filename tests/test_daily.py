@@ -23,7 +23,7 @@ def test_daily_runs_once_and_survives_restart(tmp_path):
     store.close()
 
 
-def test_daily_csv_sources_and_unverified_status(tmp_path):
+def test_daily_csv_excludes_rejected_unverified_records(tmp_path):
     store = Store(':memory:')
     r = record(); r['business_name'] = '=malicious()'
     r['emails'][0]['verification_status'] = 'unverified'
@@ -31,12 +31,17 @@ def test_daily_csv_sources_and_unverified_status(tmp_path):
     store.save_company(r, 'rejected')
     report = export_daily(store, tmp_path, datetime.now(timezone.utc).date().isoformat(), 25, {'status':'completed'})
     rows = list(csv.DictReader(open(report['list_path'])))
-    assert len(rows) == 1 and rows[0]['business_name'].startswith("'=")
-    assert rows[0]['outreach_eligible'] == 'False'
-    assert rows[0]['evidence_urls'] == 'https://roofbusiness.com/'
-    assert report['shortfall'] == 24
-    assert json.load(open(tmp_path/(datetime.now(timezone.utc).date().isoformat()+'.json')))['listed'] == 1
+    assert rows == []
+    assert report['shortfall'] == 25
+    assert json.load(open(tmp_path/(datetime.now(timezone.utc).date().isoformat()+'.json')))['listed'] == 0
     store.close()
+
+
+def test_daily_csv_formula_escaping():
+    from lead_agent.daily import cell
+    for value in ("=malicious()", "+1", "-1", "@formula", "\tformula", "\rformula"):
+        assert cell(value) == "'" + value
+    assert cell("Normal business") == "Normal business"
 
 
 def test_daily_does_not_pad_with_unresearched_matches(tmp_path):
